@@ -1,0 +1,15 @@
+{
+  "eval_id": 3,
+  "eval_name": "modal-overlay-eval",
+  "prompt": "I have a bubbletea v2 app and I want to add a confirmation modal. When the user presses 'd' on a list item, a small centered dialog should pop up that says 'Delete this note? (y/n)'. While the modal is open, the list behind it should still be visible but the keyboard input should only go to the modal. When they press y it should delete and close, n or esc should cancel. How do I structure this with my existing state machine approach (using uint const iota for states)?",
+  "assertions": [
+    "Adds a confirmModal (or similar) state to the existing state machine via iota",
+    "Uses lipgloss.Place() with lipgloss.Center alignment to center the modal",
+    "Modal has a border (lipgloss.RoundedBorder or similar)",
+    "The background list content is rendered underneath the modal (not blank)",
+    "Keyboard input in the confirmModal state only handles y/n/esc — other keys are not forwarded to the list",
+    "Pressing y triggers a delete action and returns to listView",
+    "Pressing n or esc cancels and returns to listView",
+    "Uses correct charm.land/lipgloss/v2 import"
+  ]
+}

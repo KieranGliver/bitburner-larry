@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "Uses tea.WindowSizeMsg to store width and height on the model", "passed": true, "evidence": "case tea.WindowSizeMsg: m.width = msg.Width; m.height = msg.Height"},
+    {"text": "Defines a header style with a background color using lipgloss.NewStyle()", "passed": true, "evidence": "headerStyle = lipgloss.NewStyle().Background(lipgloss.Color(\"99\"))..."},
+    {"text": "Defines a status bar style using lipgloss.NewStyle()", "passed": true, "evidence": "statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(\"240\"))"},
+    {"text": "Uses lipgloss.JoinVertical to compose header + body + status bar", "passed": false, "evidence": "Uses strings.Join([]string{header, content, status}, \"\\n\") — not lipgloss.JoinVertical. ANSI codes cause misalignment."},
+    {"text": "Status bar content varies by current state (shows different text for listView vs titleView vs bodyView)", "passed": true, "evidence": "switch m.state sets MODE: LIST / MODE: TITLE / MODE: BODY but no key hints"},
+    {"text": "Sets Width(m.width) on header and/or status bar so they fill the terminal width", "passed": true, "evidence": "headerStyle.Width(m.width).Render(\"NOTES\") set conditionally when m.width > 0"},
+    {"text": "Uses correct v2 import paths (charm.land/bubbletea/v2 and charm.land/lipgloss/v2)", "passed": true, "evidence": "imports: charm.land/bubbletea/v2 and charm.land/lipgloss/v2"},
+    {"text": "Body height accounts for header and status bar heights", "passed": false, "evidence": "No height calculation — body content not constrained, status bar can be pushed off-screen if content is long"}
+  ],
+  "summary": {"passed": 6, "failed": 2, "total": 8, "pass_rate": 0.75}
+}

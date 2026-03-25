@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "Adds a confirmModal (or similar) state to the existing state machine via iota", "passed": true, "evidence": "deleteConfirmView added as 4th iota constant"},
+    {"text": "Uses lipgloss.Place() with lipgloss.Center alignment to center the modal", "passed": false, "evidence": "No lipgloss.Place() used — dialog is rendered inline as a styled box appended below the list content"},
+    {"text": "Modal has a border (lipgloss.RoundedBorder or similar)", "passed": true, "evidence": "dialogStyle.Border(lipgloss.RoundedBorder())"},
+    {"text": "The background list content is rendered underneath the modal (not blank)", "passed": true, "evidence": "In deleteConfirmView state, list items are rendered first then dialog is appended below — list IS visible"},
+    {"text": "Keyboard input in the confirmModal state only handles y/n/esc — other keys are not forwarded to the list", "passed": true, "evidence": "deleteConfirmView case only handles y, n, esc with no fallthrough"},
+    {"text": "Pressing y triggers a delete action and returns to listView", "passed": true, "evidence": "case \"y\": removes note from slice and sets m.state = listView"},
+    {"text": "Pressing n or esc cancels and returns to listView", "passed": true, "evidence": "case \"n\", \"esc\": m.state = listView"},
+    {"text": "Uses correct charm.land/lipgloss/v2 import", "passed": true, "evidence": "\"charm.land/lipgloss/v2\" in imports"}
+  ],
+  "summary": {"passed": 7, "failed": 1, "total": 8, "pass_rate": 0.875}
+}

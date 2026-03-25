@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "Imports charm.land/bubbles/v2/list", "passed": true, "evidence": "\"charm.land/bubbles/v2/list\" in imports"},
+    {"text": "Model has a focusedPane field (or equivalent) to track which pane is active", "passed": true, "evidence": "focus focusedPane field on model struct"},
+    {"text": "Defines two distinct border styles — one for focused (colored) and one for blurred (dim/gray)", "passed": true, "evidence": "focusedPaneStyle BorderForeground color 135 (purple) vs blurredPaneStyle color 240 (gray)"},
+    {"text": "Tab key toggles the active pane", "passed": true, "evidence": "case \"tab\": toggles focus between leftPane and rightPane"},
+    {"text": "Key events are only forwarded to the currently focused component", "passed": true, "evidence": "if m.focus == leftPane { m.list, cmd = m.list.Update(msg) } — right pane not interactive"},
+    {"text": "Uses lipgloss.JoinHorizontal to place the two panes side by side", "passed": true, "evidence": "lipgloss.JoinHorizontal(lipgloss.Top, left, right) in renderSplit()"},
+    {"text": "Handles tea.WindowSizeMsg and calls list.SetSize (or equivalent) to resize components", "passed": true, "evidence": "case tea.WindowSizeMsg: m.list.SetSize(leftPanelWidth-2, m.height-2)"},
+    {"text": "Left panel has a fixed or constrained width around 25 characters", "passed": true, "evidence": "const leftPanelWidth = 25"}
+  ],
+  "summary": {"passed": 8, "failed": 0, "total": 8, "pass_rate": 1.0}
+}

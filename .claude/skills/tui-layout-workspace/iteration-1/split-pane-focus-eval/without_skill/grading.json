@@ -1,0 +1,13 @@
+{
+  "expectations": [
+    {"text": "Imports charm.land/bubbles/v2/list", "passed": true, "evidence": "\"charm.land/bubbles/v2/list\" in imports"},
+    {"text": "Model has a focusedPane field (or equivalent) to track which pane is active", "passed": true, "evidence": "activePane pane field on model struct"},
+    {"text": "Defines two distinct border styles — one for focused (colored) and one for blurred (dim/gray)", "passed": true, "evidence": "activeBorderStyle color 99 vs inactiveBorderStyle color 240"},
+    {"text": "Tab key toggles the active pane", "passed": true, "evidence": "case \"tab\": toggles between listPaneFocus and detailPaneFocus"},
+    {"text": "Key events are only forwarded to the currently focused component", "passed": true, "evidence": "if m.activePane == listPaneFocus { m.serverList, cmd = m.serverList.Update(msg) }"},
+    {"text": "Uses lipgloss.JoinHorizontal to place the two panes side by side", "passed": true, "evidence": "lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)"},
+    {"text": "Handles tea.WindowSizeMsg and calls list.SetSize (or equivalent) to resize components", "passed": true, "evidence": "case tea.WindowSizeMsg: m.serverList.SetSize(23, m.height-4)"},
+    {"text": "Left panel has a fixed or constrained width around 25 characters", "passed": true, "evidence": "const leftW = 25 used when computing panel widths in View()"}
+  ],
+  "summary": {"passed": 8, "failed": 0, "total": 8, "pass_rate": 1.0}
+}
