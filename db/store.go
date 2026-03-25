@@ -19,7 +19,7 @@ type Store struct {
 
 func (s *Store) Init() error {
 	var err error
-	s.conn, err = sql.Open("sqlite3", "./notes.db")
+	s.conn, err = sql.Open("sqlite3", "./bin/notes.db")
 	if err != nil {
 		return err
 	}

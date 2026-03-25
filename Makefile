@@ -1,10 +1,10 @@
 all: build
 
 build:
-	go build -o notes .
+	go build -o bin/larry .
 
 run: build
-	./notes
+	./bin/larry
 
 fmt:
 	gofmt -w .
@@ -13,4 +13,4 @@ lint:
 	go vet ./..
 
 clean:
-	rm -rf notes
+	rm -rf bin/notes
