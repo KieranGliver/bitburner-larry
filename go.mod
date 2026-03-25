@@ -1,4 +1,4 @@
-module tui
+module github.com/KieranGliver/bitburner-larry
 
 go 1.26.1
 
