@@ -1,0 +1,16 @@
+# Go
+bin/
+
+# TypeScript
+scripts/NetscriptDefinitions.d.ts
+scripts/node_modules/
+scripts/dist/
+
+# Config (has connection details — commit larry.toml.example instead)
+larry.toml
+
+# Claude Code local settings
+.claude/
+
+# Windows
+Thumbs.db

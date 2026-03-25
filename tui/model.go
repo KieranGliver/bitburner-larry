@@ -8,13 +8,17 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/KieranGliver/bitburner-larry/communication"
 	"github.com/KieranGliver/bitburner-larry/db"
+	"github.com/KieranGliver/bitburner-larry/logger"
 )
 
 const (
-	listView uint = iota
+	logsView uint = iota
+	listView
 	titleView
 	bodyView
 )
+
+const maxLogs = 500
 
 type model struct {
 	state     uint
@@ -27,6 +31,8 @@ type model struct {
 	textarea  textarea.Model
 	textinput textinput.Model
 	conn      *communication.BitburnerConn
+	logs      []logger.LogEntry
+	logOffset int
 }
 
 func NewModel(store *db.Store) model {
@@ -35,7 +41,7 @@ func NewModel(store *db.Store) model {
 		fmt.Printf("Unable to get notes: %v", err)
 	}
 	return model{
-		state:     listView,
+		state:     logsView,
 		store:     store,
 		notes:     notes,
 		textarea:  textarea.New(),
@@ -62,17 +68,61 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
 	case communication.BitburnerConnected:
 		m.conn = msg.Conn
+
 	case communication.BitburnerDisconnected:
+
+	case logger.LogMsg:
+		// auto-scroll to bottom if already at bottom
+		visibleLines := m.logBodyHeight()
+		atBottom := m.logOffset >= len(m.logs)-visibleLines
+
+		m.logs = append(m.logs, msg.Entry)
+		if len(m.logs) > maxLogs {
+			m.logs = m.logs[len(m.logs)-maxLogs:]
+		}
+
+		if atBottom {
+			m.logOffset = max(0, len(m.logs)-visibleLines)
+		}
 
 	case tea.KeyMsg:
 		key := msg.String()
+
+		// Tab switch — blocked while editing a note
+		if key == "tab" && m.state != titleView && m.state != bodyView {
+			if m.state == logsView {
+				m.state = listView
+			} else {
+				m.state = logsView
+			}
+			return m, tea.Batch(cmds...)
+		}
+
+		// Quit — blocked while editing
+		if key == "q" && m.state != titleView && m.state != bodyView {
+			return m, tea.Quit
+		}
+
 		switch m.state {
+		case logsView:
+			visibleLines := m.logBodyHeight()
+			maxOffset := max(0, len(m.logs)-visibleLines)
+			switch key {
+			case "up", "k":
+				if m.logOffset > 0 {
+					m.logOffset--
+				}
+			case "down", "j":
+				if m.logOffset < maxOffset {
+					m.logOffset++
+				}
+			}
+
 		case listView:
 			switch key {
-			case "q":
-				return m, tea.Quit
 			case "n":
 				m.textinput.SetValue("")
 				m.textinput.Focus()
@@ -87,12 +137,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.listIndex++
 				}
 			case "enter":
-				m.currNote = m.notes[m.listIndex]
-				m.textarea.SetValue(m.currNote.Body)
-				m.textarea.Focus()
-				m.textarea.CursorEnd()
-				m.state = bodyView
+				if len(m.notes) > 0 {
+					m.currNote = m.notes[m.listIndex]
+					m.textarea.SetValue(m.currNote.Body)
+					m.textarea.Focus()
+					m.textarea.CursorEnd()
+					m.state = bodyView
+				}
 			}
+
 		case titleView:
 			switch key {
 			case "enter":
@@ -102,12 +155,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.textarea.SetValue("")
 					m.textarea.Focus()
 					m.textarea.CursorEnd()
-
 					m.state = bodyView
 				}
 			case "esc":
 				m.state = listView
 			}
+
 		case bodyView:
 			switch key {
 			case "ctrl+s":
@@ -129,8 +182,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				m.state = listView
 			}
-
 		}
 	}
 	return m, tea.Batch(cmds...)
+}
+
+// logBodyHeight returns how many log lines fit in the body area.
+func (m model) logBodyHeight() int {
+	// header(1) + tabBar(1) + blank(3) + statusBar(1) = 4
+	return max(1, m.height-6)
 }

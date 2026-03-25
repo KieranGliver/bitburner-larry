@@ -1,0 +1,19 @@
+{
+  "name": "bitburner-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for the game bitburner",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "test",
+    "watch": "tsc --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "github.com/KieranGliver/bitburner-larry/scripts"
+  },
+  "author": "Kieran Glover",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^6.0.2"
+  }
+}
