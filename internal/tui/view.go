@@ -114,6 +114,7 @@ func (m model) currentBindings() []keyBinding {
 	case terminalView:
 		return []keyBinding{
 			{"enter", "run"},
+			{"↑↓", "navigate"},
 			{"ctrl+c", "back"},
 		}
 	}

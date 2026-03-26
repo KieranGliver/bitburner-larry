@@ -24,21 +24,23 @@ const (
 const maxLogs = 500
 
 type model struct {
-	state     uint
-	prevState uint
-	width     int
-	height    int
-	store     *db.Store
-	notes     []db.Note
-	currNote  db.Note
-	listIndex int
-	textarea  textarea.Model
-	textinput textinput.Model
-	termInput textinput.Model
-	conn      *communication.BitburnerConn
-	logs      []logger.LogEntry
-	logOffset int
-	logFile   *os.File
+	state          uint
+	prevState      uint
+	width          int
+	height         int
+	store          *db.Store
+	notes          []db.Note
+	currNote       db.Note
+	listIndex      int
+	textarea       textarea.Model
+	textinput      textinput.Model
+	termInput      textinput.Model
+	conn           *communication.BitburnerConn
+	logs           []logger.LogEntry
+	logOffset      int
+	logFile        *os.File
+	cmdHistory     []string
+	cmdHistoryIdx  int
 }
 
 func NewModel(store *db.Store) model {
@@ -46,16 +48,19 @@ func NewModel(store *db.Store) model {
 	if err != nil {
 		fmt.Printf("Unable to get notes: %v", err)
 	}
+	cmdHistory, _ := store.GetCommandHistory(100)
 	logFile, _ := os.OpenFile("larry.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 
 	return model{
-		state:     logsView,
-		store:     store,
-		notes:     notes,
-		textarea:  textarea.New(),
-		textinput: textinput.New(),
-		termInput: textinput.New(),
-		logFile:   logFile,
+		state:         logsView,
+		store:         store,
+		notes:         notes,
+		textarea:      textarea.New(),
+		textinput:     textinput.New(),
+		termInput:     textinput.New(),
+		logFile:       logFile,
+		cmdHistory:    cmdHistory,
+		cmdHistoryIdx: -1,
 	}
 }
 
@@ -222,12 +227,33 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = m.prevState
 				m.termInput.Blur()
 				m.termInput.SetValue("")
+				m.cmdHistoryIdx = -1
+			case "up":
+				if len(m.cmdHistory) > 0 {
+					if m.cmdHistoryIdx < len(m.cmdHistory)-1 {
+						m.cmdHistoryIdx++
+					}
+					m.termInput.SetValue(m.cmdHistory[len(m.cmdHistory)-1-m.cmdHistoryIdx])
+					m.termInput.CursorEnd()
+				}
+			case "down":
+				if m.cmdHistoryIdx > 0 {
+					m.cmdHistoryIdx--
+					m.termInput.SetValue(m.cmdHistory[len(m.cmdHistory)-1-m.cmdHistoryIdx])
+					m.termInput.CursorEnd()
+				} else {
+					m.cmdHistoryIdx = -1
+					m.termInput.SetValue("")
+				}
 			case "enter":
 				cmdVal := m.termInput.Value()
 				m.termInput.Blur()
 				m.termInput.SetValue("")
+				m.cmdHistoryIdx = -1
 				m.state = m.prevState
 				if cmdVal != "" {
+					m.cmdHistory = append(m.cmdHistory, cmdVal)
+					m.store.SaveCommand(cmdVal)
 					conn := m.conn
 					return m, func() tea.Msg {
 						output := larcmd.ExecuteCommand(cmdVal, conn)
