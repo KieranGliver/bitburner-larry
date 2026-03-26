@@ -1,0 +1,10 @@
+/*
+Copyright © 2026 NAME HERE <EMAIL ADDRESS>
+*/
+package main
+
+import "github.com/KieranGliver/bitburner-larry/cmd"
+
+func main() {
+	cmd.Execute()
+}

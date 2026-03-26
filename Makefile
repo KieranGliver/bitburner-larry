@@ -1,7 +1,7 @@
 all: build
 
 build:
-	go build -o bin/larry cmd/main.go
+	go build -o bin/larry ./main.go
 
 run: build
 	./bin/larry
