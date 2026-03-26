@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -60,10 +61,10 @@ func (m model) renderHeader() string {
 }
 
 func (m model) renderTabBar() string {
-	// When terminal popup is open, show the underlying tab as active
+	// Use the bottom of the stack to determine which top-level tab is active
 	effectiveState := m.state
-	if m.state == terminalView {
-		effectiveState = m.prevState
+	if len(m.stateStack) > 0 {
+		effectiveState = m.stateStack[0]
 	}
 
 	tabStyle := func(active bool, label string) string {
@@ -118,11 +119,15 @@ func (m model) currentBindings() []keyBinding {
 			{"esc", "cancel"},
 		}
 	case terminalView:
-		return []keyBinding{
+		bindings := []keyBinding{
 			{"enter", "run"},
-			{"↑↓", "navigate"},
-			{"ctrl+c", "back"},
+			{"↑↓", "history"},
+			{"ctrl+c", "close"},
 		}
+		if m.terminalCmd != "" {
+			bindings = append(bindings, keyBinding{"ctrl+d", "details"})
+		}
+		return bindings
 	}
 	return nil
 }
@@ -257,8 +262,25 @@ func (m model) View() tea.View {
 		}
 
 	case terminalView:
-		popup := popupStyle.Width(m.width / 2).Render(m.termInput.View())
-		bodyH := m.logBodyHeight() / 2
+		var popupContent strings.Builder
+		popupContent.WriteString(m.termInput.View() + "\n")
+		if m.terminalCmd != "" {
+			// border(2) + popup padding top/bottom(2) + input(1) + blank(1) + cmd(1) = 7
+			maxOutputLines := max(1, m.logBodyHeight()-7)
+			result := "\n> " + m.terminalCmd
+			if m.terminalOutput != "" {
+				lines := splitLines(m.terminalOutput)
+				if len(lines) > maxOutputLines {
+					result += "\n" + strings.Join(lines[:maxOutputLines], "\n")
+					result += fmt.Sprintf("\n(+%d more lines — press d for details)", len(lines)-maxOutputLines)
+				} else {
+					result += "\n" + m.terminalOutput
+				}
+			}
+			popupContent.WriteString(faintStyle.Render(result))
+		}
+		popup := popupStyle.Width(m.width / 2).Render(popupContent.String())
+		bodyH := m.logBodyHeight()
 		body.WriteString(lipgloss.Place(m.width, bodyH, lipgloss.Center, lipgloss.Center, popup) + "\n")
 	}
 

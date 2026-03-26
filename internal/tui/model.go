@@ -26,7 +26,7 @@ const maxLogs = 500
 
 type model struct {
 	state           uint
-	prevState       uint
+	stateStack      []uint
 	width           int
 	height          int
 	store           *db.Store
@@ -44,6 +44,21 @@ type model struct {
 	logFile         *os.File
 	cmdHistory      []string
 	cmdHistoryIdx   int
+	terminalCmd     string
+	terminalOutput  string
+}
+
+type terminalResultMsg string
+
+func pushState(stack []uint, current, next uint) ([]uint, uint) {
+	return append(stack, current), next
+}
+
+func popState(stack []uint) ([]uint, uint) {
+	if len(stack) == 0 {
+		return stack, logsView
+	}
+	return stack[:len(stack)-1], stack[len(stack)-1]
 }
 
 func NewModel(store *db.Store) model {
@@ -97,6 +112,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case communication.BitburnerDisconnected:
 
+	case terminalResultMsg:
+		m.terminalOutput = string(msg)
+		cmdVal := m.terminalCmd
+		output := string(msg)
+		return m, func() tea.Msg {
+			return logger.InfoDetail(fmt.Sprintf("[terminal] %s", cmdVal), output)
+		}
+
 	case logger.LogMsg:
 		visibleLines := m.logBodyHeight()
 		atBottom := m.logSelected >= len(m.logs)-1
@@ -124,12 +147,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Open/close terminal with ctrl+t
 		if key == "ctrl+t" {
 			if m.state == terminalView {
-				m.state = m.prevState
+				m.stateStack, m.state = popState(m.stateStack)
 				m.termInput.Blur()
 				m.termInput.SetValue("")
+				m.terminalCmd = ""
+				m.terminalOutput = ""
 			} else {
-				m.prevState = m.state
-				m.state = terminalView
+				m.stateStack, m.state = pushState(m.stateStack, m.state, terminalView)
 				m.termInput.Focus()
 			}
 			return m, tea.Batch(cmds...)
@@ -164,7 +188,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				if len(m.logs) > 0 {
 					m.logDetailOffset = 0
-					m.state = logDetailView
+					m.stateStack, m.state = pushState(m.stateStack, m.state, logDetailView)
 				}
 			}
 			// keep logSelected in the visible window
@@ -193,7 +217,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.logDetailOffset++
 				}
 			case "esc":
-				m.state = logsView
+				m.stateStack, m.state = popState(m.stateStack)
 			}
 
 		case listView:
@@ -260,11 +284,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case terminalView:
 			switch key {
+			case "ctrl+d":
+				if m.terminalCmd != "" && len(m.logs) > 0 {
+					m.logSelected = len(m.logs) - 1
+					m.logDetailOffset = 0
+					m.stateStack, m.state = pushState(m.stateStack, m.state, logDetailView)
+				}
 			case "ctrl+c":
-				m.state = m.prevState
+				m.stateStack, m.state = popState(m.stateStack)
 				m.termInput.Blur()
 				m.termInput.SetValue("")
 				m.cmdHistoryIdx = -1
+				m.terminalCmd = ""
+				m.terminalOutput = ""
 			case "up":
 				if len(m.cmdHistory) > 0 {
 					if m.cmdHistoryIdx < len(m.cmdHistory)-1 {
@@ -284,20 +316,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				cmdVal := m.termInput.Value()
-				m.termInput.Blur()
 				m.termInput.SetValue("")
 				m.cmdHistoryIdx = -1
-				m.state = m.prevState
 				if cmdVal != "" {
 					m.cmdHistory = append(m.cmdHistory, cmdVal)
 					m.store.SaveCommand(cmdVal)
+					m.terminalCmd = cmdVal
+					m.terminalOutput = ""
 					conn := m.conn
 					return m, func() tea.Msg {
 						output := larcmd.ExecuteCommand(cmdVal, conn)
 						if output == "" {
 							output = "(no output)"
 						}
-						return logger.InfoDetail(fmt.Sprintf("[terminal] %s", cmdVal), output)
+						return terminalResultMsg(output)
 					}
 				}
 			}
