@@ -15,6 +15,7 @@ import (
 
 const (
 	logsView uint = iota
+	logDetailView
 	listView
 	titleView
 	bodyView
@@ -24,23 +25,25 @@ const (
 const maxLogs = 500
 
 type model struct {
-	state          uint
-	prevState      uint
-	width          int
-	height         int
-	store          *db.Store
-	notes          []db.Note
-	currNote       db.Note
-	listIndex      int
-	textarea       textarea.Model
-	textinput      textinput.Model
-	termInput      textinput.Model
-	conn           *communication.BitburnerConn
-	logs           []logger.LogEntry
-	logOffset      int
-	logFile        *os.File
-	cmdHistory     []string
-	cmdHistoryIdx  int
+	state           uint
+	prevState       uint
+	width           int
+	height          int
+	store           *db.Store
+	notes           []db.Note
+	currNote        db.Note
+	listIndex       int
+	textarea        textarea.Model
+	textinput       textinput.Model
+	termInput       textinput.Model
+	conn            *communication.BitburnerConn
+	logs            []logger.LogEntry
+	logOffset       int
+	logSelected     int
+	logDetailOffset int
+	logFile         *os.File
+	cmdHistory      []string
+	cmdHistoryIdx   int
 }
 
 func NewModel(store *db.Store) model {
@@ -95,9 +98,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case communication.BitburnerDisconnected:
 
 	case logger.LogMsg:
-		// auto-scroll to bottom if already at bottom
 		visibleLines := m.logBodyHeight()
-		atBottom := m.logOffset >= len(m.logs)-visibleLines
+		atBottom := m.logSelected >= len(m.logs)-1
 
 		m.logs = append(m.logs, msg.Entry)
 		if len(m.logs) > maxLogs {
@@ -105,11 +107,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if atBottom {
+			m.logSelected = len(m.logs) - 1
 			m.logOffset = max(0, len(m.logs)-visibleLines)
 		}
 
 		if m.logFile != nil {
-			fmt.Fprintf(m.logFile, "%s  %s  %s\n", msg.Entry.Time.Format("15:04:05"), msg.Entry.Level, msg.Entry.Message)
+			fmt.Fprintf(m.logFile, "%s  %s  %s\n", msg.Entry.Time.Format("15:04:05"), msg.Entry.Level, msg.Entry.Summary)
+			if msg.Entry.Detail != "" {
+				fmt.Fprintf(m.logFile, "%s\n", msg.Entry.Detail)
+			}
 		}
 
 	case tea.KeyMsg:
@@ -146,17 +152,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.state {
 		case logsView:
-			visibleLines := m.logBodyHeight()
-			maxOffset := max(0, len(m.logs)-visibleLines)
 			switch key {
 			case "up", "k":
-				if m.logOffset > 0 {
-					m.logOffset--
+				if m.logSelected > 0 {
+					m.logSelected--
 				}
 			case "down", "j":
-				if m.logOffset < maxOffset {
-					m.logOffset++
+				if m.logSelected < len(m.logs)-1 {
+					m.logSelected++
 				}
+			case "enter":
+				if len(m.logs) > 0 {
+					m.logDetailOffset = 0
+					m.state = logDetailView
+				}
+			}
+			// keep logSelected in the visible window
+			visibleLines := m.logBodyHeight()
+			if m.logSelected < m.logOffset {
+				m.logOffset = m.logSelected
+			}
+			if m.logSelected >= m.logOffset+visibleLines {
+				m.logOffset = m.logSelected - visibleLines + 1
+			}
+
+		case logDetailView:
+			detail := m.logs[m.logSelected].Detail
+			if detail == "" {
+				detail = m.logs[m.logSelected].Summary
+			}
+			lines := splitLines(detail)
+			maxOffset := max(0, len(lines)-(m.logBodyHeight()-2))
+			switch key {
+			case "up", "k":
+				if m.logDetailOffset > 0 {
+					m.logDetailOffset--
+				}
+			case "down", "j":
+				if m.logDetailOffset < maxOffset {
+					m.logDetailOffset++
+				}
+			case "esc":
+				m.state = logsView
 			}
 
 		case listView:
@@ -260,7 +297,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if output == "" {
 							output = "(no output)"
 						}
-						return logger.Info(fmt.Sprintf("[terminal] %s", output))
+						return logger.InfoDetail(fmt.Sprintf("[terminal] %s", cmdVal), output)
 					}
 				}
 			}

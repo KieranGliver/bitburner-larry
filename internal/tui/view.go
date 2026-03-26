@@ -73,7 +73,7 @@ func (m model) renderTabBar() string {
 		return tabInactiveBg.Render(label)
 	}
 
-	logsTab := tabStyle(effectiveState == logsView, "Logs")
+	logsTab := tabStyle(effectiveState == logsView || effectiveState == logDetailView, "Logs")
 	notesTab := tabStyle(effectiveState == listView || effectiveState == titleView || effectiveState == bodyView, "Notes")
 
 	bar := logsTab + notesTab
@@ -88,9 +88,15 @@ func (m model) currentBindings() []keyBinding {
 	case logsView:
 		return []keyBinding{
 			{"tab", "notes"},
-			{"↑↓", "scroll"},
+			{"↑↓", "navigate"},
+			{"enter", "expand"},
 			{"ctrl+t", "terminal"},
 			{"q", "quit"},
+		}
+	case logDetailView:
+		return []keyBinding{
+			{"↑↓", "scroll"},
+			{"esc", "back"},
 		}
 	case listView:
 		return []keyBinding{
@@ -141,6 +147,10 @@ func (m model) renderStatusBar() string {
 	return conn + spacer + keys
 }
 
+func splitLines(s string) []string {
+	return strings.Split(s, "\n")
+}
+
 func (m model) renderLogsView() string {
 	if len(m.logs) == 0 {
 		return "\n" + faintStyle.Render("  no logs yet")
@@ -152,7 +162,13 @@ func (m model) renderLogsView() string {
 	visible := m.logs[start:end]
 
 	var sb strings.Builder
-	for _, entry := range visible {
+	for i, entry := range visible {
+		absIdx := m.logOffset + i
+		cursor := "  "
+		if absIdx == m.logSelected {
+			cursor = "> "
+		}
+
 		ts := logTimeStyle.Render(entry.Time.Format("15:04:05"))
 
 		var level string
@@ -168,14 +184,39 @@ func (m model) renderLogsView() string {
 		var msg string
 		switch entry.Level {
 		case logger.WARN:
-			msg = logWarnStyle.Render(entry.Message)
+			msg = logWarnStyle.Render(entry.Summary)
 		case logger.ERROR:
-			msg = logErrorStyle.Render(entry.Message)
+			msg = logErrorStyle.Render(entry.Summary)
 		default:
-			msg = faintStyle.Render(entry.Message)
+			msg = faintStyle.Render(entry.Summary)
 		}
 
-		sb.WriteString(ts + "  " + level + "  " + msg + "\n")
+		sb.WriteString(cursor + ts + "  " + level + "  " + msg + "\n")
+	}
+	return sb.String()
+}
+
+func (m model) renderLogDetailView() string {
+	if len(m.logs) == 0 {
+		return ""
+	}
+	entry := m.logs[m.logSelected]
+
+	content := entry.Detail
+	if content == "" {
+		content = entry.Summary
+	}
+	lines := splitLines(content)
+
+	visibleLines := m.logBodyHeight() - 2 // reserve 2 for header
+	start := m.logDetailOffset
+	end := min(start+visibleLines, len(lines))
+
+	var sb strings.Builder
+	header := logTimeStyle.Render(entry.Time.Format("15:04:05")) + "  " + logInfoStyle.Render(entry.Level.String()) + "  " + faintStyle.Render(entry.Summary)
+	sb.WriteString(header + "\n\n")
+	for _, l := range lines[start:end] {
+		sb.WriteString(faintStyle.Render(l) + "\n")
 	}
 	return sb.String()
 }
@@ -190,6 +231,9 @@ func (m model) View() tea.View {
 	switch m.state {
 	case logsView:
 		body.WriteString(m.renderLogsView())
+
+	case logDetailView:
+		body.WriteString(m.renderLogDetailView())
 
 	case bodyView:
 		body.WriteString("Note: \n\n")

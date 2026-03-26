@@ -67,10 +67,12 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 		return
 	}
 	seeded := 0
+	seededFiles := []string{}
 	for _, f := range gameFiles {
 		localPath := filepath.Join("scripts/dist", f.Filename)
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			os.WriteFile(localPath, []byte(f.Content), 0644)
+			seededFiles = append(seededFiles, f.Filename)
 			seeded++
 		}
 	}
@@ -82,6 +84,7 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 		return
 	}
 	pushed := 0
+	pushedFiles := []string{}
 	for _, entry := range distEntries {
 		if entry.IsDir() {
 			continue
@@ -96,10 +99,27 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 			a.P.Send(logger.Warn("push " + entry.Name() + ": " + err.Error()))
 			continue
 		}
+		pushedFiles = append(pushedFiles, entry.Name())
 		pushed++
 	}
 
-	a.P.Send(logger.Info(fmt.Sprintf("sync complete: seeded %d, pushed %d", seeded, pushed)))
+	var detail strings.Builder
+	if len(seededFiles) > 0 {
+		detail.WriteString("seeded:\n")
+		for _, f := range seededFiles {
+			detail.WriteString("  " + f + "\n")
+		}
+	}
+	if len(pushedFiles) > 0 {
+		detail.WriteString("pushed:\n")
+		for _, f := range pushedFiles {
+			detail.WriteString("  " + f + "\n")
+		}
+	}
+	a.P.Send(logger.InfoDetail(
+		fmt.Sprintf("sync complete: seeded %d, pushed %d", seeded, pushed),
+		strings.TrimRight(detail.String(), "\n"),
+	))
 
 }
 
