@@ -1,14 +1,13 @@
 package brain
 
 type World struct {
-	Player    Player      `json:"player"`
-	BitServer []BitServer `json:"bitServer"`
-	Process   []Process   `json:"process"`
+	Player  Player      `json:"player"`
+	Servers []BitServer `json:"servers"`
 }
 
 type Player struct {
 	Person
-	Money           int               `json:"money"`
+	Money           float64           `json:"money"`
 	NumPeopleKilled uint              `json:"numPeopleKilled"`
 	Entropy         uint              `json:"entropy"`
 	Karma           int               `json:"karma"`
@@ -27,13 +26,13 @@ type Person struct {
 }
 
 type Skills struct {
-	Agility      uint `json:"agility"`
-	Charisma     uint `json:"charisma"`
-	Defense      uint `json:"defense"`
-	Dexterity    uint `json:"dexterity"`
-	Hacking      uint `json:"hacking"`
-	Intelligence uint `json:"intelligence"`
-	Strength     uint `json:"strength"`
+	Agility      float64 `json:"agility"`
+	Charisma     float64 `json:"charisma"`
+	Defense      float64 `json:"defense"`
+	Dexterity    float64 `json:"dexterity"`
+	Hacking      float64 `json:"hacking"`
+	Intelligence float64 `json:"intelligence"`
+	Strength     float64 `json:"strength"`
 }
 
 type Hp struct {
@@ -41,26 +40,16 @@ type Hp struct {
 	Max     uint `json:"max"`
 }
 
-type ProcessStatus uint
-
-const (
-	ProcessSpin ProcessStatus = iota
-	ProcessRunning
-	ProcessDone
-	ProcessFailed
-)
-
 type Process struct {
-	Pid      uint          `json:"pid"`
-	Filename string        `json:"filename"`
-	Hostname string        `json:"hostname"`
-	Threads  uint          `json:"threads"`
-	Args     []string      `json:"args"`
-	Status   ProcessStatus `json:"-"`
+	Pid      uint   `json:"pid"`
+	Filename string `json:"filename"`
+	Hostname string `json:"hostname"`
+	Threads  uint   `json:"threads"`
+	Args     []any  `json:"args"`
 }
 
 type BitServer struct {
-	Processes            []*Process `json:"-"`
+	Processes            []Process  `json:"processes"`
 	Hostname             string     `json:"hostname"`
 	Ip                   string     `json:"ip"`
 	OrganizationName     string     `json:"organizationName"`

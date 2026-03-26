@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
+	"github.com/KieranGliver/bitburner-larry/internal/brain"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
@@ -46,6 +47,7 @@ type model struct {
 	cmdHistoryIdx   int
 	terminalCmd     string
 	terminalOutput  string
+	world           *brain.World
 }
 
 type terminalResultMsg string
@@ -114,6 +116,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case terminalResultMsg:
 		m.terminalOutput = string(msg)
+		if w := larcmd.CurrentWorld; w != nil {
+			m.world = w
+		}
 		cmdVal := m.terminalCmd
 		output := string(msg)
 		return m, func() tea.Msg {

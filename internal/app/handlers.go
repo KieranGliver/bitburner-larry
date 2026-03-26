@@ -48,6 +48,18 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 
 	ctx := context.Background()
 
+	// 0. Clear stale inbox/outbox files from any previous session
+	if files, err := a.Conn.GetFileNames(ctx, "home"); err == nil {
+		for _, f := range files {
+			norm := strings.TrimPrefix(f, "/")
+			if strings.HasPrefix(norm, "inbox/") || strings.HasPrefix(norm, "outbox/") {
+				if err := a.Conn.DeleteFile(ctx, "home", f); err != nil {
+					a.P.Send(logger.Warn("clear stale " + f + ": " + err.Error()))
+				}
+			}
+		}
+	}
+
 	// 1. Pull the Netscript type definitions from the game
 	dts, err := a.Conn.GetDefinitionFile(ctx)
 	if err != nil {
@@ -69,6 +81,9 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 	seeded := 0
 	seededFiles := []string{}
 	for _, f := range gameFiles {
+		if strings.HasPrefix(f.Filename, "inbox/") || strings.HasPrefix(f.Filename, "outbox/") {
+			continue
+		}
 		localPath := filepath.Join("scripts/dist", f.Filename)
 		if _, err := os.Stat(localPath); os.IsNotExist(err) {
 			os.WriteFile(localPath, []byte(f.Content), 0644)
@@ -87,6 +102,9 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 	pushedFiles := []string{}
 	for _, entry := range distEntries {
 		if entry.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), "inbox/") || strings.HasPrefix(entry.Name(), "outbox/") {
 			continue
 		}
 		localPath := filepath.Join("scripts/dist", entry.Name())
@@ -135,6 +153,9 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 	filename := filepath.Base(event.Path)
 	ext := filepath.Ext(event.Path)
 	if ext != ".js" && ext != ".txt" && ext != ".script" {
+		return
+	}
+	if strings.Contains(event.Path, "/inbox/") || strings.Contains(event.Path, "/outbox/") {
 		return
 	}
 

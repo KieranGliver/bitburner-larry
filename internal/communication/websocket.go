@@ -26,22 +26,64 @@ const (
 )
 
 type BitburnerConn struct {
-	Status  websocketStatus
-	conn    *websocket.Conn
-	nextID  int64
-	pending map[int64]chan RpcResponse
-	mu      sync.Mutex
+	Status      websocketStatus
+	conn        *websocket.Conn
+	nextID      int64
+	pending     map[int64]chan RpcResponse
+	httpPending map[string]chan string
+	mu          sync.Mutex
+}
+
+// RegisterHTTP creates a channel that will receive the body of the first /done
+// POST whose JSON contains `"id": id`. Call this before sending the request.
+func (b *BitburnerConn) RegisterHTTP(id string) <-chan string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ch := make(chan string, 1)
+	b.httpPending[id] = ch
+	return ch
+}
+
+func (b *BitburnerConn) resolveHTTP(id, data string) bool {
+	b.mu.Lock()
+	ch, ok := b.httpPending[id]
+	if ok {
+		delete(b.httpPending, id)
+	}
+	b.mu.Unlock()
+	if ok {
+		ch <- data
+	}
+	return ok
 }
 
 func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn)) {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		handleWS(w, r, p, onConnect)
+	var (
+		activeConn *BitburnerConn
+		activeMu   sync.Mutex
+	)
+	setConn := func(c *BitburnerConn) {
+		activeMu.Lock()
+		activeConn = c
+		activeMu.Unlock()
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		handleWS(w, r, p, func(c *BitburnerConn) {
+			setConn(c)
+			onConnect(c)
+		})
+		setConn(nil) // handleWS blocks until disconnect
 	})
-	http.HandleFunc("/done", func(w http.ResponseWriter, r *http.Request) {
-		handleDone(w, r, p)
+	mux.HandleFunc("/done", func(w http.ResponseWriter, r *http.Request) {
+		activeMu.Lock()
+		conn := activeConn
+		activeMu.Unlock()
+		handleDone(w, r, p, conn)
 	})
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := http.ListenAndServe(":"+port, mux); err != nil {
 		fmt.Printf("HTTP server error: %v\n", err)
 	}
 }
@@ -93,9 +135,10 @@ func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect 
 	conn.SetReadLimit(10 * 1024 * 1024) // 10MB
 
 	active := &BitburnerConn{
-		Status:  Connected,
-		conn:    conn,
-		pending: make(map[int64]chan RpcResponse),
+		Status:      Connected,
+		conn:        conn,
+		pending:     make(map[int64]chan RpcResponse),
+		httpPending: make(map[string]chan string),
 	}
 	go onConnect(active)
 	defer func() { active = nil }()
@@ -135,8 +178,19 @@ func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect 
 	}
 }
 
-func handleDone(w http.ResponseWriter, r *http.Request, p *tea.Program) {
+func handleDone(w http.ResponseWriter, r *http.Request, p *tea.Program, conn *BitburnerConn) {
 	body, _ := io.ReadAll(r.Body)
-	p.Send(logger.Info("script finished: " + string(body)))
+	if conn != nil {
+		var envelope struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(body, &envelope) == nil && envelope.ID != "" {
+			if conn.resolveHTTP(envelope.ID, string(body)) {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+	}
+	p.Send(logger.Warn("script finished: " + string(body)))
 	w.WriteHeader(http.StatusOK)
 }
