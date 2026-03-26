@@ -21,6 +21,8 @@ const (
 	titleView
 	bodyView
 	terminalView
+	serversView
+	serverDetailView
 )
 
 const maxLogs = 500
@@ -33,8 +35,12 @@ type model struct {
 	store           *db.Store
 	notes           []db.Note
 	currNote        db.Note
-	listIndex       int
-	textarea        textarea.Model
+	listIndex            int
+	serverIndex          int
+	serverListOffset     int
+	selectedServer       *brain.BitServer
+	serverDetailOffset   int
+	textarea             textarea.Model
 	textinput       textinput.Model
 	termInput       textinput.Model
 	conn            *communication.BitburnerConn
@@ -164,11 +170,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
-		// Tab switch — blocked while editing a note
-		if key == "tab" && m.state != titleView && m.state != bodyView && m.state != terminalView {
-			if m.state == logsView {
+		// Tab switch — blocked while editing a note or in detail views
+		if key == "tab" && m.state != titleView && m.state != bodyView && m.state != terminalView &&
+			m.state != logDetailView && m.state != serverDetailView {
+			switch m.state {
+			case logsView:
 				m.state = listView
-			} else {
+			case listView:
+				m.state = serversView
+			default:
 				m.state = logsView
 			}
 			return m, tea.Batch(cmds...)
@@ -287,6 +297,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = listView
 			}
 
+		case serversView:
+			servers := m.worldServers()
+			switch key {
+			case "up", "k":
+				if m.serverIndex > 0 {
+					m.serverIndex--
+				}
+			case "down", "j":
+				if m.serverIndex < len(servers)-1 {
+					m.serverIndex++
+				}
+			case "enter":
+				if len(servers) > 0 {
+					s := servers[m.serverIndex]
+					m.selectedServer = &s
+					m.serverDetailOffset = 0
+					m.stateStack, m.state = pushState(m.stateStack, m.state, serverDetailView)
+				}
+			}
+			// keep serverIndex in the visible window
+			visibleLines := m.logBodyHeight()
+			if m.serverIndex < m.serverListOffset {
+				m.serverListOffset = m.serverIndex
+			}
+			if m.serverIndex >= m.serverListOffset+visibleLines {
+				m.serverListOffset = m.serverIndex - visibleLines + 1
+			}
+
+		case serverDetailView:
+			if m.selectedServer != nil {
+				maxOffset := max(0, len(m.selectedServer.Processes)-(m.logBodyHeight()-7))
+				switch key {
+				case "up", "k":
+					if m.serverDetailOffset > 0 {
+						m.serverDetailOffset--
+					}
+				case "down", "j":
+					if m.serverDetailOffset < maxOffset {
+						m.serverDetailOffset++
+					}
+				case "esc":
+					m.selectedServer = nil
+					m.stateStack, m.state = popState(m.stateStack)
+				}
+			} else {
+				if key == "esc" {
+					m.stateStack, m.state = popState(m.stateStack)
+				}
+			}
+
 		case terminalView:
 			switch key {
 			case "ctrl+d":
@@ -347,4 +407,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) logBodyHeight() int {
 	// header(1) + tabBar(1) + blank(3) + statusBar(1) = 4
 	return max(1, m.height-6)
+}
+
+// worldServers returns the server list from world, or nil if world isn't loaded.
+func (m model) worldServers() []brain.BitServer {
+	if m.world == nil {
+		return nil
+	}
+	return m.world.Servers
 }
