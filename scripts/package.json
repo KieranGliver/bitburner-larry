@@ -1,19 +1,23 @@
 {
-  "name": "bitburner-scripts",
-  "version": "1.0.0",
-  "description": "Scripts for the game bitburner",
-  "main": "dist/index.js",
-  "scripts": {
-    "test": "test",
-    "watch": "tsc --watch"
-  },
-  "repository": {
-    "type": "git",
-    "url": "github.com/KieranGliver/bitburner-larry/scripts"
-  },
-  "author": "Kieran Glover",
-  "license": "MIT",
-  "devDependencies": {
-    "typescript": "^6.0.2"
-  }
+	"name": "bitburner-scripts",
+	"version": "1.0.0",
+	"description": "Scripts for the game bitburner",
+	"main": "dist/index.js",
+	"scripts": {
+		"check": "biome check .",
+		"format": "biome format .",
+		"lint": "biome lint .",
+		"fix": "biome check --write .",
+		"watch": "tsc --watch"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/KieranGliver/bitburner-larry/scripts"
+	},
+	"author": "Kieran Glover",
+	"license": "MIT",
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.9",
+		"typescript": "^6.0.2"
+	}
 }
