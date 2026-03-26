@@ -23,6 +23,12 @@ var (
 	tabInactiveBg = lipgloss.NewStyle().Background(lipgloss.Color("235")).Foreground(green).Faint(true).Padding(0, 2)
 	tabBarFill    = lipgloss.NewStyle().Background(lipgloss.Color("235"))
 
+	// Terminal popup
+	popupStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(green).
+			Padding(1, 2)
+
 	// Status bar
 	statusBg          = lipgloss.NewStyle().Background(lipgloss.Color("232"))
 	connectedStyle    = lipgloss.NewStyle().Background(lipgloss.Color("232")).Foreground(green).Bold(true).Padding(0, 1)
@@ -54,16 +60,21 @@ func (m model) renderHeader() string {
 }
 
 func (m model) renderTabBar() string {
-	onLogs := m.state == logsView
-
-	var logsTab, notesTab string
-	if onLogs {
-		logsTab = tabActiveBg.Render("Logs")
-		notesTab = tabInactiveBg.Render("Notes")
-	} else {
-		logsTab = tabInactiveBg.Render("Logs")
-		notesTab = tabActiveBg.Render("Notes")
+	// When terminal popup is open, show the underlying tab as active
+	effectiveState := m.state
+	if m.state == terminalView {
+		effectiveState = m.prevState
 	}
+
+	tabStyle := func(active bool, label string) string {
+		if active {
+			return tabActiveBg.Render(label)
+		}
+		return tabInactiveBg.Render(label)
+	}
+
+	logsTab := tabStyle(effectiveState == logsView, "Logs")
+	notesTab := tabStyle(effectiveState == listView || effectiveState == titleView || effectiveState == bodyView, "Notes")
 
 	bar := logsTab + notesTab
 	fillW := max(0, m.width-lipgloss.Width(bar))
@@ -78,6 +89,7 @@ func (m model) currentBindings() []keyBinding {
 		return []keyBinding{
 			{"tab", "notes"},
 			{"↑↓", "scroll"},
+			{"ctrl+t", "terminal"},
 			{"q", "quit"},
 		}
 	case listView:
@@ -86,6 +98,7 @@ func (m model) currentBindings() []keyBinding {
 			{"n", "new"},
 			{"↑↓", "navigate"},
 			{"enter", "open"},
+			{"ctrl+t", "terminal"},
 			{"q", "quit"},
 		}
 	case titleView:
@@ -97,6 +110,11 @@ func (m model) currentBindings() []keyBinding {
 		return []keyBinding{
 			{"ctrl+s", "save"},
 			{"esc", "cancel"},
+		}
+	case terminalView:
+		return []keyBinding{
+			{"enter", "run"},
+			{"ctrl+c", "back"},
 		}
 	}
 	return nil
@@ -192,6 +210,11 @@ func (m model) View() tea.View {
 			}
 			body.WriteString(enumeratorStyle.Render(prefix) + n.Title + " | " + faintStyle.Render(shortBody) + "\n")
 		}
+
+	case terminalView:
+		popup := popupStyle.Width(m.width / 2).Render(m.termInput.View())
+		bodyH := m.logBodyHeight() / 2
+		body.WriteString(lipgloss.Place(m.width, bodyH, lipgloss.Center, lipgloss.Center, popup) + "\n")
 	}
 
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left,

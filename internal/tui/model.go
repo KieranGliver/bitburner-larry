@@ -17,12 +17,14 @@ const (
 	listView
 	titleView
 	bodyView
+	terminalView
 )
 
 const maxLogs = 500
 
 type model struct {
 	state     uint
+	prevState uint
 	width     int
 	height    int
 	store     *db.Store
@@ -31,6 +33,7 @@ type model struct {
 	listIndex int
 	textarea  textarea.Model
 	textinput textinput.Model
+	termInput textinput.Model
 	conn      *communication.BitburnerConn
 	logs      []logger.LogEntry
 	logOffset int
@@ -43,12 +46,14 @@ func NewModel(store *db.Store) model {
 		fmt.Printf("Unable to get notes: %v", err)
 	}
 	logFile, _ := os.OpenFile("larry.log", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+
 	return model{
 		state:     logsView,
 		store:     store,
 		notes:     notes,
 		textarea:  textarea.New(),
 		textinput: textinput.New(),
+		termInput: textinput.New(),
 		logFile:   logFile,
 	}
 }
@@ -67,6 +72,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	m.textarea, cmd = m.textarea.Update(msg)
 	cmds = append(cmds, cmd)
+
+	if m.state == terminalView {
+		m.termInput, cmd = m.termInput.Update(msg)
+		cmds = append(cmds, cmd)
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -99,8 +109,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 
+		// Open/close terminal with ctrl+t
+		if key == "ctrl+t" {
+			if m.state == terminalView {
+				m.state = m.prevState
+				m.termInput.Blur()
+				m.termInput.SetValue("")
+			} else {
+				m.prevState = m.state
+				m.state = terminalView
+				m.termInput.Focus()
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// Tab switch — blocked while editing a note
-		if key == "tab" && m.state != titleView && m.state != bodyView {
+		if key == "tab" && m.state != titleView && m.state != bodyView && m.state != terminalView {
 			if m.state == logsView {
 				m.state = listView
 			} else {
@@ -110,7 +134,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Quit — blocked while editing
-		if key == "q" && m.state != titleView && m.state != bodyView {
+		if key == "q" && m.state != titleView && m.state != bodyView && m.state != terminalView {
 			return m, tea.Quit
 		}
 
@@ -189,6 +213,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = listView
 			case "esc":
 				m.state = listView
+			}
+
+		case terminalView:
+			switch key {
+			case "ctrl+c":
+				m.state = m.prevState
+				m.termInput.Blur()
+				m.termInput.SetValue("")
+			case "enter":
+				cmdVal := m.termInput.Value()
+				m.termInput.Blur()
+				m.termInput.SetValue("")
+				m.state = m.prevState
+				if cmdVal != "" {
+					return m, func() tea.Msg {
+						// TODO: Write command logic here
+						return logger.Info(fmt.Sprintf(`[command] Ran command "%s"`, cmdVal))
+					}
+				}
 			}
 		}
 	}
