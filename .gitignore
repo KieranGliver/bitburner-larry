@@ -1,10 +1,12 @@
 # Go
 bin/
+larry.log
 
 # TypeScript
 scripts/NetscriptDefinitions.d.ts
 scripts/node_modules/
 scripts/dist/
+scripts/oldscripts/
 
 # Config (has connection details — commit larry.toml.example instead)
 larry.toml

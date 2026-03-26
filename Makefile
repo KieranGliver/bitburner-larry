@@ -1,13 +1,13 @@
 all: build
 
 build:
-	go build -o bin/larry .
+	go build -o bin/larry cmd/main.go
 
 run: build
 	./bin/larry
 
 dev: build
-	npm --prefix scripts run watch > /tmp/tsc-watch.log 2>&1 & ./bin/larry; kill %1
+	rm -rf scripts/dist && mkdir -p scripts/dist && npm --prefix scripts run watch > /tmp/tsc-watch.log 2>&1 & ./bin/larry; kill %1
 
 fmt:
 	gofmt -w .
