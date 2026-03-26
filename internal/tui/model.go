@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
@@ -227,9 +228,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.termInput.SetValue("")
 				m.state = m.prevState
 				if cmdVal != "" {
+					conn := m.conn
 					return m, func() tea.Msg {
-						// TODO: Write command logic here
-						return logger.Info(fmt.Sprintf(`[command] Ran command "%s"`, cmdVal))
+						output := larcmd.ExecuteCommand(cmdVal, conn)
+						if output == "" {
+							output = "(no output)"
+						}
+						return logger.Info(fmt.Sprintf("[terminal] %s", output))
 					}
 				}
 			}
