@@ -28,7 +28,8 @@ func (a *App) Start() {
 		return
 	}
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".txt" {
+		ext := filepath.Ext(entry.Name())
+		if entry.IsDir() || (ext != ".txt" && ext != ".script") {
 			continue
 		}
 		content, err := os.ReadFile(filepath.Join("scripts/src", entry.Name()))
@@ -113,7 +114,7 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 
 	filename := filepath.Base(event.Path)
 	ext := filepath.Ext(event.Path)
-	if ext != ".js" && ext != ".txt" {
+	if ext != ".js" && ext != ".txt" && ext != ".script" {
 		return
 	}
 
@@ -148,7 +149,7 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 
 func (a *App) OnEventSrc(event fswatcher.WatchEvent) {
 	ext := filepath.Ext(event.Path)
-	if ext != ".ts" && ext != ".txt" {
+	if ext != ".ts" && ext != ".txt" && ext != ".script" {
 		return
 	}
 
@@ -157,11 +158,12 @@ func (a *App) OnEventSrc(event fswatcher.WatchEvent) {
 	if slices.Contains(event.Types, fswatcher.EventRemove) || slices.Contains(event.Types, fswatcher.EventRename) {
 		os.Remove(filepath.Join("scripts/dist", base+".js"))
 		os.Remove(filepath.Join("scripts/dist", base+".txt"))
+		os.Remove(filepath.Join("scripts/dist", base+".script"))
 		// OnEventDist will fire for the removed files and delete from Bitburner
 		return
 	}
 
-	if ext != ".txt" {
+	if ext != ".txt" && ext != ".script" {
 		return
 	}
 
@@ -180,8 +182,8 @@ func (a *App) OnEventSrc(event fswatcher.WatchEvent) {
 		return
 	}
 
-	if err := os.WriteFile(filepath.Join("scripts/dist", base+".txt"), content, 0644); err != nil {
-		a.P.Send(logger.Warn("[filesync] copy " + base + ".txt to dist: " + err.Error()))
+	if err := os.WriteFile(filepath.Join("scripts/dist", base+ext), content, 0644); err != nil {
+		a.P.Send(logger.Warn("[filesync] copy " + base + ext + " to dist: " + err.Error()))
 	}
 	// OnEventDist will pick up the change and push to Bitburner
 }
