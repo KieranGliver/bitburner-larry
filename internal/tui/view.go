@@ -263,11 +263,11 @@ func (m model) View() tea.View {
 
 	case terminalView:
 		var popupContent strings.Builder
-		popupContent.WriteString(m.termInput.View() + "\n")
+		popupContent.WriteString(m.termInput.View())
 		if m.terminalCmd != "" {
 			// border(2) + popup padding top/bottom(2) + input(1) + blank(1) + cmd(1) = 7
 			maxOutputLines := max(1, m.logBodyHeight()-7)
-			result := "\n> " + m.terminalCmd
+			result := "\n\n> " + m.terminalCmd
 			if m.terminalOutput != "" {
 				lines := splitLines(m.terminalOutput)
 				if len(lines) > maxOutputLines {

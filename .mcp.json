@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "bitburner": {
+      "type": "http",
+      "url": "http://localhost:12526/mcp"
+    }
+  }
+}

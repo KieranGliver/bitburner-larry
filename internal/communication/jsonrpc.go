@@ -176,4 +176,3 @@ func (b *BitburnerConn) GetSaveFile(ctx context.Context) (string, error) {
 	}
 	return save, nil
 }
-
