@@ -10,7 +10,7 @@ import (
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/filesync"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
-	"github.com/KieranGliver/bitburner-larry/internal/mcpserver"
+	"github.com/KieranGliver/bitburner-larry/internal/mcp"
 	"github.com/KieranGliver/bitburner-larry/internal/tui"
 )
 

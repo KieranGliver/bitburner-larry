@@ -1,1 +1,1 @@
-grow(args)
+grow(args[0])

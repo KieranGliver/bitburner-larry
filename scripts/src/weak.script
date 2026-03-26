@@ -1,1 +1,1 @@
-weaken(args)
+weaken(args[0])
