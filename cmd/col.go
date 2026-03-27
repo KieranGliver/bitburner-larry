@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/KieranGliver/bitburner-larry/internal/brain"
+	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +48,11 @@ type colKillAllResponse struct {
 
 // colRPC sends a request to the Col inbox and waits for a response in the outbox.
 func colRPC(id string, req map[string]any) (string, error) {
+	return colRPCWith(currentConn, id, req)
+}
+
+// colRPCWith is like colRPC but uses an explicit connection.
+func colRPCWith(conn *communication.BitburnerConn, id string, req map[string]any) (string, error) {
 	payload, err := json.Marshal(req)
 	if err != nil {
 		return "", err
@@ -56,22 +62,96 @@ func colRPC(id string, req map[string]any) (string, error) {
 	inboxPath := fmt.Sprintf("/inbox/%s.txt", id)
 	outboxPath := fmt.Sprintf("/outbox/%s.txt", id)
 
-	if err := currentConn.PushFile(ctx, "home", inboxPath, string(payload)); err != nil {
+	if err := conn.PushFile(ctx, "home", inboxPath, string(payload)); err != nil {
 		return "", fmt.Errorf("error sending command: %w", err)
 	}
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		time.Sleep(500 * time.Millisecond)
-		result, err := currentConn.GetFile(ctx, "home", outboxPath)
+		result, err := conn.GetFile(ctx, "home", outboxPath)
 		if err != nil || result == "" {
 			continue
 		}
-		_ = currentConn.DeleteFile(ctx, "home", outboxPath)
-		_ = currentConn.DeleteFile(ctx, "home", inboxPath)
+		_ = conn.DeleteFile(ctx, "home", outboxPath)
+		_ = conn.DeleteFile(ctx, "home", inboxPath)
 		return result, nil
 	}
 	return "", fmt.Errorf("timeout: no response from Col within 30s")
+}
+
+// DoScan performs a single full world scan via Col and returns the result.
+func DoScan(conn *communication.BitburnerConn) (*brain.World, error) {
+	id := colNextID()
+	ch := conn.RegisterHTTP(id)
+
+	ackResult, err := colRPCWith(conn, id, map[string]any{
+		"id": id, "action": "deploy",
+		"server": "foodnstuff", "script": "task-scan.js",
+		"threads": 1, "args": []any{id},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var ack colResponse
+	if err := json.Unmarshal([]byte(ackResult), &ack); err != nil || !ack.Success {
+		msg := ack.Error
+		if err != nil {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("deploy failed: %s", msg)
+	}
+
+	select {
+	case data := <-ch:
+		var resp colScanResponse
+		if err := json.Unmarshal([]byte(data), &resp); err != nil {
+			return nil, fmt.Errorf("parse scan data: %w", err)
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("scan failed: %s", resp.Error)
+		}
+		world := &brain.World{Player: resp.Player, Servers: resp.Servers}
+		CurrentWorld = world
+		return world, nil
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for task-scan.js")
+	}
+}
+
+// DoCrack cracks all crackable servers via Col and returns the cracked/failed lists.
+func DoCrack(conn *communication.BitburnerConn) (cracked []string, failed []string, err error) {
+	id := colNextID()
+	result, err := colRPCWith(conn, id, map[string]any{
+		"id": id, "action": "crack", "targets": []string{},
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	var resp colCrackResponse
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		return nil, nil, fmt.Errorf("parse crack response: %w", err)
+	}
+	return resp.Cracked, resp.Failed, nil
+}
+
+// RunScanner runs a background loop that scans the world every interval and calls
+// onWorld with each result. It stops when ctx is cancelled.
+func RunScanner(conn *communication.BitburnerConn, ctx context.Context, interval time.Duration, onWorld func(*brain.World)) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			world, err := DoScan(conn)
+			if err != nil {
+				continue
+			}
+			onWorld(world)
+		}
+	}
 }
 
 func colNextID() string {

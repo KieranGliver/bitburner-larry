@@ -167,7 +167,23 @@ export async function main(ns: NS): Promise<void> {
 	ns.disableLog("ALL");
 	ns.print("Col daemon started, watching /inbox/");
 
+	let larryConnected = false;
+
 	while (true) {
+		const nowConnected = await fetch("http://localhost:12525/ping")
+			.then((r) => r.ok)
+			.catch(() => false);
+
+		if (nowConnected && !larryConnected) {
+			ns.print("Larry connected — running init");
+			await fetch("http://localhost:12525/col-ready", {
+				method: "POST",
+				body: JSON.stringify({ status: "ready" }),
+			}).catch(() => {});
+		} else if (!nowConnected && larryConnected) {
+			ns.print("Larry disconnected");
+		}
+		larryConnected = nowConnected;
 		const inboxFiles = ns.ls("home", "/inbox/");
 
 		for (const file of inboxFiles) {

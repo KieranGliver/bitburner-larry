@@ -120,6 +120,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case communication.BitburnerDisconnected:
 
+	case *brain.World:
+		m.world = msg
+
 	case terminalResultMsg:
 		m.terminalOutput = string(msg)
 		if w := larcmd.CurrentWorld; w != nil {

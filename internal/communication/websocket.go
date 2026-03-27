@@ -57,7 +57,7 @@ func (b *BitburnerConn) resolveHTTP(id, data string) bool {
 	return ok
 }
 
-func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn)) {
+func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn), onColReady func(*BitburnerConn)) {
 	var (
 		activeConn *BitburnerConn
 		activeMu   sync.Mutex
@@ -81,6 +81,22 @@ func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn)) {
 		conn := activeConn
 		activeMu.Unlock()
 		handleDone(w, r, p, conn)
+	})
+	mux.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		activeMu.Lock()
+		conn := activeConn
+		activeMu.Unlock()
+		if conn == nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/col-ready", func(w http.ResponseWriter, r *http.Request) {
+		activeMu.Lock()
+		conn := activeConn
+		activeMu.Unlock()
+		handleColReady(w, r, p, conn, onColReady)
 	})
 
 	if err := http.ListenAndServe(":"+port, mux); err != nil {
@@ -176,6 +192,13 @@ func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect 
 			p.Send(logger.Info("received: " + string(msg)))
 		}
 	}
+}
+
+func handleColReady(w http.ResponseWriter, r *http.Request, p *tea.Program, conn *BitburnerConn, onColReady func(*BitburnerConn)) {
+	io.ReadAll(r.Body) // drain body
+	w.WriteHeader(http.StatusOK)
+	p.Send(logger.Info("col ready"))
+	go onColReady(conn)
 }
 
 func handleDone(w http.ResponseWriter, r *http.Request, p *tea.Program, conn *BitburnerConn) {
