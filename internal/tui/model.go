@@ -8,10 +8,10 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
-	"github.com/KieranGliver/bitburner-larry/internal/brain"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
+	"github.com/KieranGliver/bitburner-larry/internal/world"
 )
 
 const (
@@ -28,32 +28,32 @@ const (
 const maxLogs = 500
 
 type model struct {
-	state           uint
-	stateStack      []uint
-	width           int
-	height          int
-	store           *db.Store
-	notes           []db.Note
-	currNote        db.Note
-	listIndex            int
-	serverIndex          int
-	serverListOffset     int
-	selectedServer       *brain.BitServer
-	serverDetailOffset   int
-	textarea             textarea.Model
-	textinput       textinput.Model
-	termInput       textinput.Model
-	conn            *communication.BitburnerConn
-	logs            []logger.LogEntry
-	logOffset       int
-	logSelected     int
-	logDetailOffset int
-	logFile         *os.File
-	cmdHistory      []string
-	cmdHistoryIdx   int
-	terminalCmd     string
-	terminalOutput  string
-	world           *brain.World
+	state              uint
+	stateStack         []uint
+	width              int
+	height             int
+	store              *db.Store
+	notes              []db.Note
+	currNote           db.Note
+	listIndex          int
+	serverIndex        int
+	serverListOffset   int
+	selectedServer     *world.BitServer
+	serverDetailOffset int
+	textarea           textarea.Model
+	textinput          textinput.Model
+	termInput          textinput.Model
+	conn               *communication.BitburnerConn
+	logs               []logger.LogEntry
+	logOffset          int
+	logSelected        int
+	logDetailOffset    int
+	logFile            *os.File
+	cmdHistory         []string
+	cmdHistoryIdx      int
+	terminalCmd        string
+	terminalOutput     string
+	world              *world.World
 }
 
 type terminalResultMsg string
@@ -120,7 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case communication.BitburnerDisconnected:
 
-	case *brain.World:
+	case *world.World:
 		m.world = msg
 
 	case terminalResultMsg:
@@ -413,7 +413,7 @@ func (m model) logBodyHeight() int {
 }
 
 // worldServers returns the server list from world, or nil if world isn't loaded.
-func (m model) worldServers() []brain.BitServer {
+func (m model) worldServers() []world.BitServer {
 	if m.world == nil {
 		return nil
 	}

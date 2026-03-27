@@ -1,4 +1,4 @@
-package brain
+package world
 
 type World struct {
 	Player  Player      `json:"player"`
@@ -23,6 +23,30 @@ func (w *World) AddProcess(hostname string, proc Process) {
 			return
 		}
 	}
+}
+
+// GetThreads returns the total number of threads that could be run across all
+// servers with admin rights, given ramPerThread GB per thread.
+func (w *World) GetThreads(ramPerThread float64) int {
+	total := 0
+	for _, s := range w.Servers {
+		if !s.HasAdminRights {
+			continue
+		}
+		free := s.MaxRam - s.RamUsed
+		total += int(free / ramPerThread)
+	}
+	return total
+}
+
+func (w *World) GetAllProcess() []Process {
+	procs := []Process{}
+	for _, serv := range w.Servers {
+		for _, proc := range serv.Processes {
+			procs = append(procs, proc)
+		}
+	}
+	return procs
 }
 
 type Player struct {
@@ -69,31 +93,31 @@ type Process struct {
 }
 
 type BitServer struct {
-	Processes            []Process  `json:"processes"`
-	Hostname             string     `json:"hostname"`
-	Ip                   string     `json:"ip"`
-	OrganizationName     string     `json:"organizationName"`
-	CpuCores             uint       `json:"cpuCores"`
-	MaxRam               float64    `json:"maxRam"`
-	RamUsed              float64    `json:"ramUsed"`
-	HasAdminRights       bool       `json:"hasAdminRights"`
-	PurchasedByPlayer    bool       `json:"purchasedByPlayer"`
-	IsConnectedTo        bool       `json:"isConnectedTo"`
-	FtpPortOpen          bool       `json:"ftpPortOpen"`
-	HttpPortOpen         bool       `json:"httpPortOpen"`
-	SmtpPortOpen         bool       `json:"smtpPortOpen"`
-	SqlPortOpen          bool       `json:"sqlPortOpen"`
-	SshPortOpen          bool       `json:"sshPortOpen"`
-	BackdoorInstalled    bool       `json:"backdoorInstalled"`
-	BaseDifficulty       float64    `json:"baseDifficulty"`
-	HackDifficulty       float64    `json:"hackDifficulty"`
-	MinDifficulty        float64    `json:"minDifficulty"`
-	MoneyAvailable       float64    `json:"moneyAvailable"`
-	MoneyMax             float64    `json:"moneyMax"`
-	NumOpenPortsRequired uint       `json:"numOpenPortsRequired"`
-	OpenPortCount        uint       `json:"openPortCount"`
-	RequiredHackingSkill uint       `json:"requiredHackingSkill"`
-	ServerGrowth         float64    `json:"serverGrowth"`
+	Processes            []Process `json:"processes"`
+	Hostname             string    `json:"hostname"`
+	Ip                   string    `json:"ip"`
+	OrganizationName     string    `json:"organizationName"`
+	CpuCores             uint      `json:"cpuCores"`
+	MaxRam               float64   `json:"maxRam"`
+	RamUsed              float64   `json:"ramUsed"`
+	HasAdminRights       bool      `json:"hasAdminRights"`
+	PurchasedByPlayer    bool      `json:"purchasedByPlayer"`
+	IsConnectedTo        bool      `json:"isConnectedTo"`
+	FtpPortOpen          bool      `json:"ftpPortOpen"`
+	HttpPortOpen         bool      `json:"httpPortOpen"`
+	SmtpPortOpen         bool      `json:"smtpPortOpen"`
+	SqlPortOpen          bool      `json:"sqlPortOpen"`
+	SshPortOpen          bool      `json:"sshPortOpen"`
+	BackdoorInstalled    bool      `json:"backdoorInstalled"`
+	BaseDifficulty       float64   `json:"baseDifficulty"`
+	HackDifficulty       float64   `json:"hackDifficulty"`
+	MinDifficulty        float64   `json:"minDifficulty"`
+	MoneyAvailable       float64   `json:"moneyAvailable"`
+	MoneyMax             float64   `json:"moneyMax"`
+	NumOpenPortsRequired uint      `json:"numOpenPortsRequired"`
+	OpenPortCount        uint      `json:"openPortCount"`
+	RequiredHackingSkill uint      `json:"requiredHackingSkill"`
+	ServerGrowth         float64   `json:"serverGrowth"`
 }
 
 type Multipliers struct {

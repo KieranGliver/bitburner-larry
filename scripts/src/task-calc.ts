@@ -6,11 +6,13 @@ export async function main(ns: NS): Promise<void> {
 	const hackPercent = ns.args[2] as number;
 
 	const maxMoney = ns.getServerMaxMoney(target);
-	const hackAmount = hackPercent * maxMoney;
-	const hackThreads = Math.ceil(ns.hackAnalyzeThreads(target, hackAmount));
+	// Use hackAnalyze (fraction per thread) to compute threads for max-money state.
+	// hackAnalyzeThreads returns -1 when hackAmount > currentMoney, so we avoid it.
+	const hackFracPerThread = ns.hackAnalyze(target);
+	const hackThreads = hackFracPerThread > 0 ? Math.ceil(hackPercent / hackFracPerThread) : 1;
 	// ceil means we steal slightly more than hackPercent — use the actual fraction
 	// stolen by hackThreads so grow compensates for what hack really takes
-	const actualHackFrac = hackThreads * ns.hackAnalyze(target);
+	const actualHackFrac = Math.min(hackThreads * hackFracPerThread, 0.99);
 	const growMult = 1 / (1 - actualHackFrac);
 	const growThreads = Math.ceil(ns.growthAnalyze(target, growMult));
 	const weakenPer = ns.weakenAnalyze(1);
