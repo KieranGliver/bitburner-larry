@@ -5,6 +5,26 @@ type World struct {
 	Servers []BitServer `json:"servers"`
 }
 
+// UpdateRam adjusts RamUsed on the named server by delta (positive = consumed, negative = freed).
+func (w *World) UpdateRam(hostname string, delta float64) {
+	for i := range w.Servers {
+		if w.Servers[i].Hostname == hostname {
+			w.Servers[i].RamUsed += delta
+			return
+		}
+	}
+}
+
+// AddProcess appends a process entry to the named server's process list.
+func (w *World) AddProcess(hostname string, proc Process) {
+	for i := range w.Servers {
+		if w.Servers[i].Hostname == hostname {
+			w.Servers[i].Processes = append(w.Servers[i].Processes, proc)
+			return
+		}
+	}
+}
+
 type Player struct {
 	Person
 	Money           float64           `json:"money"`

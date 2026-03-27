@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -154,6 +155,26 @@ func RunScanner(conn *communication.BitburnerConn, ctx context.Context, interval
 	}
 }
 
+// trackProcess records a newly launched process in CurrentWorld: adds the process entry
+// and charges its RAM against the server. Silent no-op if CurrentWorld is nil.
+func trackProcess(hostname, script string, pid, threads int, args []any) {
+	if CurrentWorld == nil || currentConn == nil {
+		return
+	}
+	ram, err := currentConn.CalculateRam(context.Background(), "home", script)
+	if err != nil || ram <= 0 {
+		return
+	}
+	CurrentWorld.UpdateRam(hostname, ram*float64(threads))
+	CurrentWorld.AddProcess(hostname, brain.Process{
+		Pid:      uint(pid),
+		Filename: script,
+		Hostname: hostname,
+		Threads:  uint(threads),
+		Args:     args,
+	})
+}
+
 func colNextID() string {
 	n := atomic.AddInt64(&colRequestCounter, 1)
 	return fmt.Sprintf("COL-%03d", n)
@@ -198,6 +219,7 @@ var colExecCmd = &cobra.Command{
 			return
 		}
 		if resp.Success {
+			trackProcess(args[0], args[1], resp.PID, threads, scriptArgs)
 			fmt.Fprintf(cmd.OutOrStdout(), "ok pid=%d\n", resp.PID)
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "failed: %s\n", resp.Error)
@@ -239,6 +261,7 @@ var colDeployCmd = &cobra.Command{
 			return
 		}
 		if resp.Success {
+			trackProcess(args[0], args[1], resp.PID, threads, scriptArgs)
 			fmt.Fprintf(cmd.OutOrStdout(), "ok pid=%d\n", resp.PID)
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "failed: %s\n", resp.Error)
@@ -423,6 +446,7 @@ var colPingCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "exec failed: %s\n", msg)
 			return
 		}
+		trackProcess(server, "task-ping.js", ack.PID, 1, []any{id})
 
 		select {
 		case <-ch:
@@ -433,13 +457,189 @@ var colPingCmd = &cobra.Command{
 	},
 }
 
+type runDispatchResult struct {
+	Server  string `json:"server"`
+	Threads int    `json:"threads"`
+	PID     int    `json:"pid"`
+}
+
+type runResult struct {
+	Script           string               `json:"script"`
+	ThreadsRequested int                  `json:"threads_requested"`
+	ThreadsScheduled int                  `json:"threads_scheduled"`
+	ThreadsRemaining int                  `json:"threads_remaining"`
+	Dispatches       []runDispatchResult  `json:"dispatches"`
+	Errors           []string             `json:"errors"`
+}
+
+var colRunCmd = &cobra.Command{
+	Use:   "run <script> [args...]",
+	Short: "Spread a script across all available servers to hit a target thread count",
+	Args:  cobra.MinimumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if currentConn == nil {
+			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+			return
+		}
+		threads, _ := cmd.Flags().GetInt("threads")
+		asJSON, _ := cmd.Flags().GetBool("json")
+		script := args[0]
+		scriptArgs := make([]any, len(args)-1)
+		for i, a := range args[1:] {
+			scriptArgs[i] = a
+		}
+
+		ctx := context.Background()
+
+		ramPerThread, err := currentConn.CalculateRam(ctx, "home", script)
+		if err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "error getting RAM cost for %s: %v\n", script, err)
+			return
+		}
+		if ramPerThread <= 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "error: %s reports 0 GB RAM cost\n", script)
+			return
+		}
+
+		world := CurrentWorld
+		if world == nil {
+			if !asJSON {
+				fmt.Fprintln(cmd.OutOrStdout(), "no world data — scanning...")
+			}
+			world, err = DoScan(currentConn)
+			if err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "scan failed: %v\n", err)
+				return
+			}
+		}
+
+		type slot struct {
+			hostname string
+			capacity int
+		}
+		var slots []slot
+		for _, s := range world.Servers {
+			if !s.HasAdminRights {
+				continue
+			}
+			free := s.MaxRam - s.RamUsed
+			cap := int(free / ramPerThread)
+			if cap > 0 {
+				slots = append(slots, slot{s.Hostname, cap})
+			}
+		}
+		sort.Slice(slots, func(i, j int) bool {
+			return slots[i].capacity > slots[j].capacity
+		})
+
+		remaining := threads
+		type pending struct {
+			hostname string
+			threads  int
+		}
+		var toDispatch []pending
+		for _, s := range slots {
+			if remaining <= 0 {
+				break
+			}
+			t := s.capacity
+			if t > remaining {
+				t = remaining
+			}
+			toDispatch = append(toDispatch, pending{s.hostname, t})
+			remaining -= t
+		}
+
+		result := runResult{
+			Script:           script,
+			ThreadsRequested: threads,
+			Dispatches:       []runDispatchResult{},
+			Errors:           []string{},
+		}
+
+		if !asJSON {
+			fmt.Fprintf(cmd.OutOrStdout(), "ram cost: %.2f GB/thread\n", ramPerThread)
+			if len(toDispatch) == 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "no servers with enough free RAM\n")
+				return
+			}
+		} else if len(toDispatch) == 0 {
+			result.ThreadsRemaining = threads
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+			return
+		}
+
+		for _, d := range toDispatch {
+			id := colNextID()
+			raw, err := colRPC(id, map[string]any{
+				"id": id, "action": "deploy",
+				"server": d.hostname, "script": script,
+				"threads": d.threads, "args": scriptArgs,
+			})
+			if err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", d.hostname, err))
+				if !asJSON {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s (%d threads): error — %v\n", d.hostname, d.threads, err)
+				}
+				continue
+			}
+			var resp colResponse
+			if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: parse error: %v", d.hostname, err))
+				if !asJSON {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s (%d threads): parse error — %v\n", d.hostname, d.threads, err)
+				}
+				continue
+			}
+			if resp.Success {
+				if CurrentWorld != nil {
+					CurrentWorld.UpdateRam(d.hostname, ramPerThread*float64(d.threads))
+					CurrentWorld.AddProcess(d.hostname, brain.Process{
+						Pid:      uint(resp.PID),
+						Filename: script,
+						Hostname: d.hostname,
+						Threads:  uint(d.threads),
+						Args:     scriptArgs,
+					})
+				}
+				result.Dispatches = append(result.Dispatches, runDispatchResult{d.hostname, d.threads, resp.PID})
+				result.ThreadsScheduled += d.threads
+				if !asJSON {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s: %d threads (pid %d)\n", d.hostname, d.threads, resp.PID)
+				}
+			} else {
+				result.Errors = append(result.Errors, fmt.Sprintf("%s: %s", d.hostname, resp.Error))
+				if !asJSON {
+					fmt.Fprintf(cmd.OutOrStdout(), "  %s (%d threads): failed — %s\n", d.hostname, d.threads, resp.Error)
+				}
+			}
+		}
+
+		result.ThreadsRemaining = threads - result.ThreadsScheduled
+
+		if asJSON {
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Fprintln(cmd.OutOrStdout(), string(out))
+		} else {
+			if result.ThreadsRemaining > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "warning: %d/%d threads unscheduled — not enough free RAM\n", result.ThreadsRemaining, threads)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "done: %d scheduled, %d remaining\n", result.ThreadsScheduled, result.ThreadsRemaining)
+		}
+	},
+}
+
 func init() {
 	colExecCmd.Flags().IntP("threads", "t", 1, "number of threads")
 	colDeployCmd.Flags().IntP("threads", "t", 1, "number of threads")
+	colRunCmd.Flags().IntP("threads", "t", 1, "total threads to spread across servers")
+	colRunCmd.Flags().Bool("json", false, "output machine-readable JSON")
 	colPingCmd.Flags().StringP("server", "s", "home", "server to run task-ping.js on")
 	colScanCmd.Flags().StringP("server", "s", "home", "server to run task-scan.js on")
 	colCmd.AddCommand(colExecCmd)
 	colCmd.AddCommand(colDeployCmd)
+	colCmd.AddCommand(colRunCmd)
 	colCmd.AddCommand(colKillAllCmd)
 	colCmd.AddCommand(colCrackCmd)
 	colCmd.AddCommand(colPingCmd)
