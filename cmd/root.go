@@ -6,14 +6,10 @@ import (
 	"strings"
 
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
-	"github.com/KieranGliver/bitburner-larry/internal/world"
 	"github.com/spf13/cobra"
 )
 
 var currentConn *communication.BitburnerConn
-
-// CurrentWorld holds the most recent world state from "col scan".
-var CurrentWorld *world.World
 
 // ExecuteCommand runs a cobra command from the TUI terminal, captures its output,
 // and returns it as a string. conn is stored for subcommands to access via currentConn.

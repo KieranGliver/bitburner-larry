@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
+	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
@@ -125,7 +126,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case terminalResultMsg:
 		m.terminalOutput = string(msg)
-		if w := larcmd.CurrentWorld; w != nil {
+		if w := col.CurrentWorld; w != nil {
 			m.world = w
 		}
 		cmdVal := m.terminalCmd

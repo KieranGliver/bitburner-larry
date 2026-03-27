@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/KieranGliver/bitburner-larry/cmd"
+	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	"github.com/KieranGliver/bitburner-larry/internal/world"
 )
 
 type BatchPlan struct {
-	cmd.ColCalcResponse
+	col.ColCalcResponse
 	Pids []uint
 }
 
@@ -47,7 +47,7 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 	if err != nil {
 		b.onLog(fmt.Sprintf("Error on CalculateRam: %v", err), logger.ERROR)
 	}
-	_, err = cmd.PickServer(ram)
+	_, err = col.PickServer(ram)
 	if err != nil {
 		return
 	}
@@ -78,7 +78,7 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		}
 
 		pids := []uint{}
-		calcResp, err := cmd.DoCalc(conn, target.Hostname, 0.5)
+		calcResp, err := col.DoCalc(conn, target.Hostname, 0.5)
 		if err != nil {
 			b.onLog(fmt.Sprintf("Error on doCalc: %v", err), logger.ERROR)
 			return
@@ -99,12 +99,12 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		 */
 
 		if calcResp.PrepGrowThreads+calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads > 0 {
-			growResult, err := cmd.DoRun(conn, "grow.script", calcResp.PrepGrowThreads, []any{target.Hostname})
+			growResult, err := col.DoRun(conn, "grow.script", calcResp.PrepGrowThreads, []any{target.Hostname})
 			if err != nil {
 				b.onLog(fmt.Sprintf("Error running grow.script on %v: %v", target.Hostname, err), logger.ERROR)
 				return
 			}
-			weakResult, err := cmd.DoRun(conn, "weak.script", calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads, []any{target.Hostname})
+			weakResult, err := col.DoRun(conn, "weak.script", calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads, []any{target.Hostname})
 			if err != nil {
 				b.onLog(fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err), logger.ERROR)
 				return
@@ -134,12 +134,12 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		hackThreads := (budget - 1) * 25 / 26
 		weakenThreads := hackThreads/25 + 1
 
-		hackResult, err := cmd.DoRun(conn, "hack.script", hackThreads, []any{target.Hostname})
+		hackResult, err := col.DoRun(conn, "hack.script", hackThreads, []any{target.Hostname})
 		if err != nil {
 			b.onLog(fmt.Sprintf("Error running hack.script on %v: %v", target.Hostname, err), logger.ERROR)
 			return
 		}
-		weakResult, err := cmd.DoRun(conn, "weak.script", weakenThreads, []any{target.Hostname})
+		weakResult, err := col.DoRun(conn, "weak.script", weakenThreads, []any{target.Hostname})
 		if err != nil {
 			b.onLog(fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err), logger.ERROR)
 			return

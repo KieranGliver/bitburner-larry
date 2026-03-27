@@ -7,8 +7,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
 	"github.com/KieranGliver/bitburner-larry/internal/app"
+	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/filesync"
@@ -46,17 +46,17 @@ func main() {
 		}
 		var scanCtx context.Context
 		scanCtx, scanCancel = context.WithCancel(context.Background())
-		if cracked, _, err := larcmd.DoCrack(conn, nil); err != nil {
+		if cracked, _, err := col.DoCrack(conn, nil); err != nil {
 			p.Send(logger.Warn("crack: " + err.Error()))
 		} else if len(cracked) > 0 {
 			p.Send(logger.Info(fmt.Sprintf("cracked %d servers: %v", len(cracked), cracked)))
 		}
-		if w, err := larcmd.DoScan(conn, ""); err != nil {
+		if w, err := col.DoScan(conn, ""); err != nil {
 			p.Send(logger.Warn("initial scan: " + err.Error()))
 		} else {
 			p.Send(w)
 		}
-		larcmd.RunScanner(conn, scanCtx, 5*time.Second, func(w *world.World) {
+		col.RunScanner(conn, scanCtx, 5*time.Second, func(w *world.World) {
 			p.Send(w)
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
+	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -84,7 +85,7 @@ func (s *McpServer) Serve(port string) {
 	mcpSrv.AddTool(mcp.NewTool("world",
 		mcp.WithDescription("Return the cached world state (player stats + all servers) as JSON; run scan first to populate it"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		world := larcmd.CurrentWorld
+		world := col.CurrentWorld
 		if world == nil {
 			return mcp.NewToolResultText("no world data — run scan first"), nil
 		}
