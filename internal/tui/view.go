@@ -77,8 +77,9 @@ func (m model) renderTabBar() string {
 	logsTab := tabStyle(effectiveState == logsView || effectiveState == logDetailView, "Logs")
 	notesTab := tabStyle(effectiveState == listView || effectiveState == titleView || effectiveState == bodyView, "Notes")
 	serversTab := tabStyle(effectiveState == serversView || effectiveState == serverDetailView, "Servers")
+	batchesTab := tabStyle(effectiveState == batchesView, "Batches")
 
-	bar := logsTab + notesTab + serversTab
+	bar := logsTab + notesTab + serversTab + batchesTab
 	fillW := max(0, m.width-lipgloss.Width(bar))
 	return bar + tabBarFill.Width(fillW).Render("")
 }
@@ -111,9 +112,16 @@ func (m model) currentBindings() []keyBinding {
 		}
 	case serversView:
 		return []keyBinding{
-			{"tab", "logs"},
+			{"tab", "batches"},
 			{"↑↓", "navigate"},
 			{"enter", "details"},
+			{"ctrl+t", "terminal"},
+			{"q", "quit"},
+		}
+	case batchesView:
+		return []keyBinding{
+			{"tab", "logs"},
+			{"↑↓", "scroll"},
 			{"ctrl+t", "terminal"},
 			{"q", "quit"},
 		}
@@ -384,6 +392,33 @@ func (m model) renderServerDetailView() string {
 	return sb.String()
 }
 
+func (m model) renderBatchesView() string {
+	if m.world == nil {
+		return "\n" + faintStyle.Render("  no world data yet — run 'col' to scan")
+	}
+	targets := m.world.GetBatchTargets()
+	if len(targets) == 0 {
+		return "\n" + faintStyle.Render("  no active batches")
+	}
+
+	header := faintStyle.Render(fmt.Sprintf("  %-24s  %8s  %8s  %8s", "TARGET", "HACK", "WEAKEN", "GROW"))
+	var sb strings.Builder
+	sb.WriteString(header + "\n\n")
+
+	visibleLines := m.logBodyHeight() - 2
+	start := m.batchScrollOffset
+	end := min(start+visibleLines, len(targets))
+
+	for _, host := range targets[start:end] {
+		hack := m.world.GetHackTarget(host)
+		weaken := m.world.GetWeakenTarget(host)
+		grow := m.world.GetGrowTarget(host)
+		line := fmt.Sprintf("  %-24s  %8d  %8d  %8d", host, hack, weaken, grow)
+		sb.WriteString(faintStyle.Render(line) + "\n")
+	}
+	return sb.String()
+}
+
 func (m model) View() tea.View {
 	header := m.renderHeader()
 	tabBar := m.renderTabBar()
@@ -424,6 +459,9 @@ func (m model) View() tea.View {
 
 	case serverDetailView:
 		body.WriteString(m.renderServerDetailView())
+
+	case batchesView:
+		body.WriteString(m.renderBatchesView())
 
 	case terminalView:
 		var popupContent strings.Builder

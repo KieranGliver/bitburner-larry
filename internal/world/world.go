@@ -1,5 +1,10 @@
 package world
 
+import (
+	"fmt"
+	"sort"
+)
+
 type World struct {
 	Player  Player      `json:"player"`
 	Servers []BitServer `json:"servers"`
@@ -37,6 +42,40 @@ func (w *World) GetThreads(ramPerThread float64) int {
 		total += int(free / ramPerThread)
 	}
 	return total
+}
+
+func (w *World) countScriptThreadsForTarget(script, host string) int {
+	total := 0
+	for _, s := range w.Servers {
+		for _, p := range s.Processes {
+			if p.Filename == script && len(p.Args) > 0 && fmt.Sprintf("%v", p.Args[0]) == host {
+				total += int(p.Threads)
+			}
+		}
+	}
+	return total
+}
+
+func (w *World) GetHackTarget(host string) int   { return w.countScriptThreadsForTarget("hack.script", host) }
+func (w *World) GetWeakenTarget(host string) int { return w.countScriptThreadsForTarget("weak.script", host) }
+func (w *World) GetGrowTarget(host string) int   { return w.countScriptThreadsForTarget("grow.script", host) }
+
+// GetBatchTargets returns unique hostnames targeted by any hack/weaken/grow script, sorted.
+func (w *World) GetBatchTargets() []string {
+	seen := map[string]struct{}{}
+	for _, s := range w.Servers {
+		for _, p := range s.Processes {
+			if (p.Filename == "hack.script" || p.Filename == "weak.script" || p.Filename == "grow.script") && len(p.Args) > 0 {
+				seen[fmt.Sprintf("%v", p.Args[0])] = struct{}{}
+			}
+		}
+	}
+	targets := make([]string, 0, len(seen))
+	for t := range seen {
+		targets = append(targets, t)
+	}
+	sort.Strings(targets)
+	return targets
 }
 
 func (w *World) GetAllProcess() []Process {

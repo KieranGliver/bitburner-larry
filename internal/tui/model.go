@@ -24,6 +24,7 @@ const (
 	terminalView
 	serversView
 	serverDetailView
+	batchesView
 )
 
 const maxLogs = 500
@@ -41,6 +42,7 @@ type model struct {
 	serverListOffset   int
 	selectedServer     *world.BitServer
 	serverDetailOffset int
+	batchScrollOffset  int
 	textarea           textarea.Model
 	textinput          textinput.Model
 	termInput          textinput.Model
@@ -182,6 +184,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.state = listView
 			case listView:
 				m.state = serversView
+			case serversView:
+				m.state = batchesView
 			default:
 				m.state = logsView
 			}
@@ -327,6 +331,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.serverIndex >= m.serverListOffset+visibleLines {
 				m.serverListOffset = m.serverIndex - visibleLines + 1
+			}
+
+		case batchesView:
+			if m.world != nil {
+				targets := m.world.GetBatchTargets()
+				switch key {
+				case "up", "k":
+					if m.batchScrollOffset > 0 {
+						m.batchScrollOffset--
+					}
+				case "down", "j":
+					maxOff := max(0, len(targets)-m.logBodyHeight())
+					if m.batchScrollOffset < maxOff {
+						m.batchScrollOffset++
+					}
+				}
 			}
 
 		case serverDetailView:
