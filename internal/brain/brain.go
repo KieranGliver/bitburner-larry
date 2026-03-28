@@ -62,6 +62,12 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 	// until we have no more threads to run
 	// For ever server in the list, desc from top rank to bottom
 	for _, target := range servers {
+		if !target.HasAdminRights {
+			continue
+		}
+		if uint(w.Player.Skills.Hacking) < target.RequiredHackingSkill {
+			continue
+		}
 		batchPlan, exists := b.batchMap[target.Hostname]
 		// Check if active pids are still running if > 0 continue
 		if exists {
@@ -78,7 +84,7 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		}
 
 		pids := []uint{}
-		calcResp, err := col.DoCalc(conn, target.Hostname, 0.5)
+		calcResp, err := col.DoCalc(conn, target.Hostname, 0.25)
 		if err != nil {
 			b.onLog(fmt.Sprintf("Error on doCalc: %v", err), logger.ERROR)
 			return
