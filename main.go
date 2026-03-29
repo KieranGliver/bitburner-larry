@@ -26,6 +26,7 @@ func main() {
 	}
 
 	m := tui.NewModel(store)
+	defer m.Close()
 
 	p := tea.NewProgram(m)
 

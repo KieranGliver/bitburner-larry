@@ -1,6 +1,5 @@
 # Go
 bin/
-larry.log
 
 # TypeScript
 scripts/NetscriptDefinitions.d.ts
