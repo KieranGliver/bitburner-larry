@@ -11,11 +11,12 @@ var serversCmd = &cobra.Command{
 	Use:   "servers",
 	Short: "List all servers",
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
+		conn := currentState.Conn()
+		if conn == nil {
 			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
 			return
 		}
-		servers, err := currentConn.GetAllServers(context.Background())
+		servers, err := conn.GetAllServers(context.Background())
 		if err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "error: %v\n", err)
 			return

@@ -4,15 +4,18 @@ import (
 	"context"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/sgtdi/fswatcher"
 )
 
-func Watch(path string, p *tea.Program, onEvent func(event fswatcher.WatchEvent)) {
-	w, _ := fswatcher.New(
+func Watch(path string, onError func(string), onEvent func(event fswatcher.WatchEvent)) {
+	w, err := fswatcher.New(
 		fswatcher.WithPath(path),
 		fswatcher.WithCooldown(500*time.Millisecond),
 	)
+	if err != nil {
+		onError("filesync " + path + ": " + err.Error())
+		return
+	}
 
 	ctx := context.Background()
 	go w.Watch(ctx)

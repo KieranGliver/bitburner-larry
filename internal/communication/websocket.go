@@ -57,7 +57,7 @@ func (b *BitburnerConn) resolveHTTP(id, data string) bool {
 	return ok
 }
 
-func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn), onColReady func(*BitburnerConn)) {
+func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn), onDisconnect func(), onColReady func(*BitburnerConn)) {
 	var (
 		activeConn *BitburnerConn
 		activeMu   sync.Mutex
@@ -73,7 +73,7 @@ func Serve(port string, p *tea.Program, onConnect func(*BitburnerConn), onColRea
 		handleWS(w, r, p, func(c *BitburnerConn) {
 			setConn(c)
 			onConnect(c)
-		})
+		}, onDisconnect)
 		setConn(nil) // handleWS blocks until disconnect
 	})
 	mux.HandleFunc("/done", func(w http.ResponseWriter, r *http.Request) {
@@ -139,7 +139,7 @@ func (b *BitburnerConn) Call(ctx context.Context, method string, params ...any) 
 	}
 }
 
-func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect func(*BitburnerConn)) {
+func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect func(*BitburnerConn), onDisconnect func()) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -158,14 +158,13 @@ func handleWS(w http.ResponseWriter, r *http.Request, p *tea.Program, onConnect 
 	}
 	go onConnect(active)
 	defer func() { active = nil }()
-	p.Send(BitburnerConnected{Conn: active})
 	p.Send(logger.Info("Bitburner connected"))
 
 	for {
 		_, msg, err := conn.Read(r.Context())
 		if err != nil {
 			active.Status = Disconnected
-			p.Send(BitburnerDisconnected{})
+			onDisconnect()
 			p.Send(logger.Info("Bitburner disconnected: " + err.Error()))
 			return
 		}

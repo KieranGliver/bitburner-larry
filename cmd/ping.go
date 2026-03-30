@@ -11,7 +11,8 @@ var pingCmd = &cobra.Command{
 	Use:   "ping",
 	Short: "Show connection status",
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil || currentConn.Status == communication.Disconnected {
+		conn := currentState.Conn()
+		if conn == nil || conn.Status == communication.Disconnected {
 			fmt.Fprintln(cmd.OutOrStdout(), "disconnected")
 			return
 		}

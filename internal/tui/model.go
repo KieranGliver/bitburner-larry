@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
-	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	"github.com/KieranGliver/bitburner-larry/internal/world"
@@ -29,6 +28,7 @@ type model struct {
 	height     int
 	conn       *communication.BitburnerConn
 	world      *world.World
+	runCmd     func(string) string
 
 	notesModel
 	serversModel
@@ -60,7 +60,7 @@ func popState(stack []uint) ([]uint, uint) {
 	return stack[:len(stack)-1], stack[len(stack)-1]
 }
 
-func NewModel() model {
+func NewModel(runCmd func(string) string) model {
 	nm, err := NewNotesModel()
 	if err != nil {
 		fmt.Printf("Unable to load notes log: %v", err)
@@ -76,6 +76,7 @@ func NewModel() model {
 
 	return model{
 		state:         logsView,
+		runCmd:        runCmd,
 		notesModel:    nm,
 		terminalModel: tm,
 		logsModel:     lm,
@@ -124,9 +125,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.world = msg
 
 	case terminalResultMsg:
-		if w := col.CurrentWorld; w != nil {
-			m.world = w
-		}
 		return m, m.handleTerminalResult(msg)
 
 	case logger.LogMsg:

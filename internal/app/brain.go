@@ -1,12 +1,12 @@
-package brain
+package app
 
 import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	col "github.com/KieranGliver/bitburner-larry/internal/col"
-	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	"github.com/KieranGliver/bitburner-larry/internal/world"
 )
@@ -19,10 +19,32 @@ type BatchPlan struct {
 type Brain struct {
 	batchMap map[string]BatchPlan
 	rank     func(a, b world.BitServer) bool
-	onLog    func(string, logger.Level)
+	onLog    func(level logger.Level, summary string)
+	cancel   context.CancelFunc
 }
 
-func New(rank func(a, b world.BitServer) bool, onLog func(string, logger.Level)) *Brain {
+// brainTargets defines the priority order for the brain to target servers.
+// Servers earlier in the list are targeted first. Servers not in the list rank last.
+var brainTargets = []string{
+	"n00dles",
+	"foodnstuff",
+	"sigma-cosmetics",
+}
+
+func rankByTargetList(a, b world.BitServer) bool {
+	idxA, idxB := len(brainTargets), len(brainTargets)
+	for i, name := range brainTargets {
+		if a.Hostname == name {
+			idxA = i
+		}
+		if b.Hostname == name {
+			idxB = i
+		}
+	}
+	return idxA < idxB
+}
+
+func NewBrain(rank func(a, b world.BitServer) bool, onLog func(level logger.Level, summary string)) *Brain {
 	return &Brain{
 		batchMap: make(map[string]BatchPlan),
 		rank:     rank,
@@ -39,24 +61,29 @@ func findByPID(procs []world.Process, id uint) (int, world.Process) {
 	return -1, world.Process{}
 }
 
-func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
+func (b *Brain) tick(s *AppState) {
+	w := s.World()
+	conn := s.Conn()
 	ctx := context.Background()
 	// Ensure we have enough ram can run the scan script with at least one thread
 	var err error
 	ram, err := conn.CalculateRam(ctx, "home", "task-calc.js")
 	if err != nil {
-		b.onLog(fmt.Sprintf("Error on CalculateRam: %v", err), logger.ERROR)
+		b.onLog(logger.ERROR, fmt.Sprintf("Error on CalculateRam: %v", err))
 	}
-	_, err = col.PickServer(ram)
+	_, err = col.PickServer(w, ram)
 	if err != nil {
+		// Can't run task-calc.js so skip no-op
 		return
 	}
 	// Sort servers in the world by rank function
 	servers := make([]world.BitServer, len(w.Servers))
 	copy(servers, w.Servers)
-	sort.Slice(servers, func(i, j int) bool {
-		return b.rank(servers[i], servers[j])
-	})
+	if b.rank != nil {
+		sort.Slice(servers, func(i, j int) bool {
+			return b.rank(servers[i], servers[j])
+		})
+	}
 
 	procs := w.GetAllProcess()
 	// until we have no more threads to run
@@ -84,9 +111,9 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		}
 
 		pids := []uint{}
-		calcResp, err := col.DoCalc(conn, target.Hostname, 0.25)
+		calcResp, err := col.DoCalc(w, conn, target.Hostname, 0.25)
 		if err != nil {
-			b.onLog(fmt.Sprintf("Error on doCalc: %v", err), logger.ERROR)
+			b.onLog(logger.ERROR, fmt.Sprintf("Error on doCalc: %v", err))
 			return
 		}
 
@@ -105,14 +132,14 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		 */
 
 		if calcResp.PrepGrowThreads+calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads > 0 {
-			growResult, err := col.DoRun(conn, "grow.script", calcResp.PrepGrowThreads, []any{target.Hostname})
+			growResult, err := col.DoRun(w, conn, "grow.script", calcResp.PrepGrowThreads, []any{target.Hostname})
 			if err != nil {
-				b.onLog(fmt.Sprintf("Error running grow.script on %v: %v", target.Hostname, err), logger.ERROR)
+				b.onLog(logger.ERROR, fmt.Sprintf("Error running grow.script on %v: %v", target.Hostname, err))
 				return
 			}
-			weakResult, err := col.DoRun(conn, "weak.script", calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads, []any{target.Hostname})
+			weakResult, err := col.DoRun(w, conn, "weak.script", calcResp.PrepGrowWeakenThreads+calcResp.PrepWeakenThreads, []any{target.Hostname})
 			if err != nil {
-				b.onLog(fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err), logger.ERROR)
+				b.onLog(logger.ERROR, fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err))
 				return
 			}
 			for _, d := range growResult.Dispatches {
@@ -134,20 +161,20 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 		// Should be 1.75 GB weak is always higher than hack (1.70 GB)
 		weakRam, err := conn.CalculateRam(ctx, "home", "weak.script")
 		if err != nil {
-			b.onLog(fmt.Sprintf("Error on CalculateRam: %v", err), logger.ERROR)
+			b.onLog(logger.ERROR, fmt.Sprintf("Error on CalculateRam: %v", err))
 		}
 		budget := min(w.GetThreads(weakRam), calcResp.HackThreads+calcResp.WeakenHackThreads)
 		hackThreads := (budget - 1) * 25 / 26
 		weakenThreads := hackThreads/25 + 1
 
-		hackResult, err := col.DoRun(conn, "hack.script", hackThreads, []any{target.Hostname})
+		hackResult, err := col.DoRun(w, conn, "hack.script", hackThreads, []any{target.Hostname})
 		if err != nil {
-			b.onLog(fmt.Sprintf("Error running hack.script on %v: %v", target.Hostname, err), logger.ERROR)
+			b.onLog(logger.ERROR, fmt.Sprintf("Error running hack.script on %v: %v", target.Hostname, err))
 			return
 		}
-		weakResult, err := col.DoRun(conn, "weak.script", weakenThreads, []any{target.Hostname})
+		weakResult, err := col.DoRun(w, conn, "weak.script", weakenThreads, []any{target.Hostname})
 		if err != nil {
-			b.onLog(fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err), logger.ERROR)
+			b.onLog(logger.ERROR, fmt.Sprintf("Error running weak.script on %v: %v", target.Hostname, err))
 			return
 		}
 
@@ -169,4 +196,36 @@ func (b *Brain) Tick(w *world.World, conn *communication.BitburnerConn) {
 	// What happens if the algorthim runing scripts runs out of room at any point of the algorthim?
 	// Does the cycle break? Will it fix itself? Should we wait to run all the scripts we need for current batch or
 	// Don't care and will do it when next tick comes on better server potentiallty.
+}
+
+func (b *Brain) start(s *AppState) {
+	if b.cancel != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.cancel = cancel
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				b.tick(s)
+			}
+		}
+	}()
+}
+
+func (b *Brain) stop() {
+	if b.cancel == nil {
+		return
+	}
+	b.cancel()
+	b.cancel = nil
+}
+
+func (b *Brain) Running() bool {
+	return b.cancel != nil
 }

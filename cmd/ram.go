@@ -12,11 +12,12 @@ var ramCmd = &cobra.Command{
 	Short: "Show RAM cost of a script",
 	Args:  cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
+		conn := currentState.Conn()
+		if conn == nil {
 			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
 			return
 		}
-		gb, err := currentConn.CalculateRam(context.Background(), args[1], args[0])
+		gb, err := conn.CalculateRam(context.Background(), args[1], args[0])
 		if err != nil {
 			fmt.Fprintf(cmd.OutOrStdout(), "error: %v\n", err)
 			return

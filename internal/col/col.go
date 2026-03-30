@@ -14,12 +14,6 @@ import (
 
 var colRequestCounter int64
 
-// CurrentWorld holds the most recent world state from the last scan.
-var CurrentWorld *world.World
-
-// CurrentCalc holds the most recent result from DoCalc.
-var CurrentCalc *ColCalcResponse
-
 // response types
 
 type ColResponse struct {
@@ -120,17 +114,16 @@ func ColNextID() string {
 }
 
 // TrackProcess records a newly launched process in CurrentWorld.
-// Silent no-op if CurrentWorld is nil.
-func TrackProcess(conn *communication.BitburnerConn, hostname, script string, pid, threads int, args []any) {
-	if CurrentWorld == nil {
+func TrackProcess(w *world.World, conn *communication.BitburnerConn, hostname, script string, pid, threads int, args []any) {
+	if w == nil {
 		return
 	}
 	ram, err := conn.CalculateRam(context.Background(), "home", script)
 	if err != nil || ram <= 0 {
 		return
 	}
-	CurrentWorld.UpdateRam(hostname, ram*float64(threads))
-	CurrentWorld.AddProcess(hostname, world.Process{
+	w.UpdateRam(hostname, ram*float64(threads))
+	w.AddProcess(hostname, world.Process{
 		Pid:      uint(pid),
 		Filename: script,
 		Hostname: hostname,
@@ -141,13 +134,13 @@ func TrackProcess(conn *communication.BitburnerConn, hostname, script string, pi
 
 // PickServer returns the hostname with the most free RAM that can fit at least ramNeeded GB.
 // Returns an error if CurrentWorld is nil or no eligible server is found.
-func PickServer(ramNeeded float64) (string, error) {
-	if CurrentWorld == nil {
+func PickServer(w *world.World, ramNeeded float64) (string, error) {
+	if w == nil {
 		return "", fmt.Errorf("no world data — run col scan first")
 	}
 	best := ""
 	bestFree := 0.0
-	for _, s := range CurrentWorld.Servers {
+	for _, s := range w.Servers {
 		if !s.HasAdminRights {
 			continue
 		}
@@ -199,7 +192,6 @@ func DoScan(conn *communication.BitburnerConn, server string) (*world.World, err
 			return nil, fmt.Errorf("scan failed: %s", resp.Error)
 		}
 		w := &world.World{Player: resp.Player, Servers: resp.Servers}
-		CurrentWorld = w
 		return w, nil
 	case <-time.After(30 * time.Second):
 		return nil, fmt.Errorf("timeout waiting for task-scan.js")
@@ -229,7 +221,7 @@ func DoCrack(conn *communication.BitburnerConn, targets []string) (cracked []str
 // DoCalc calculates hack/grow/weaken thread counts for target via Col.
 // hackPercent is the fraction of max money to steal (e.g. 0.75); pass 0 to use the default (0.75).
 // Scans the world first if CurrentWorld is nil.
-func DoCalc(conn *communication.BitburnerConn, target string, hackPercent float64) (*ColCalcResponse, error) {
+func DoCalc(w *world.World, conn *communication.BitburnerConn, target string, hackPercent float64) (*ColCalcResponse, error) {
 	if hackPercent <= 0 {
 		hackPercent = 0.75
 	}
@@ -240,13 +232,11 @@ func DoCalc(conn *communication.BitburnerConn, target string, hackPercent float6
 		return nil, fmt.Errorf("error getting RAM cost: %w", err)
 	}
 
-	if CurrentWorld == nil {
-		if _, err := DoScan(conn, ""); err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
-		}
+	if w == nil {
+		return nil, fmt.Errorf("no world data — run col scan first")
 	}
 
-	host, err := PickServer(ramPerThread)
+	host, err := PickServer(w, ramPerThread)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +260,7 @@ func DoCalc(conn *communication.BitburnerConn, target string, hackPercent float6
 		}
 		return nil, fmt.Errorf("deploy failed: %s", msg)
 	}
-	TrackProcess(conn, host, "task-calc.js", ack.PID, 1, []any{id, target, hackPercent})
+	TrackProcess(w, conn, host, "task-calc.js", ack.PID, 1, []any{id, target, hackPercent})
 
 	select {
 	case data := <-ch:
@@ -281,7 +271,6 @@ func DoCalc(conn *communication.BitburnerConn, target string, hackPercent float6
 		if !resp.Success {
 			return nil, fmt.Errorf("calc failed: %s", resp.Error)
 		}
-		CurrentCalc = &resp
 		return &resp, nil
 	case <-time.After(30 * time.Second):
 		return nil, fmt.Errorf("timeout waiting for task-calc.js")
@@ -289,8 +278,8 @@ func DoCalc(conn *communication.BitburnerConn, target string, hackPercent float6
 }
 
 // DoRun spreads script across all servers with free RAM to hit the target thread count.
-// Pass args as the script arguments. Scans the world first if CurrentWorld is nil.
-func DoRun(conn *communication.BitburnerConn, script string, threads int, args []any) (*RunResult, error) {
+// Pass args as the script arguments. Returns an error if w is nil.
+func DoRun(w *world.World, conn *communication.BitburnerConn, script string, threads int, args []any) (*RunResult, error) {
 	ctx := context.Background()
 	ramPerThread, err := conn.CalculateRam(ctx, "home", script)
 	if err != nil {
@@ -300,12 +289,8 @@ func DoRun(conn *communication.BitburnerConn, script string, threads int, args [
 		return nil, fmt.Errorf("%s reports 0 GB RAM cost", script)
 	}
 
-	w := CurrentWorld
 	if w == nil {
-		w, err = DoScan(conn, "")
-		if err != nil {
-			return nil, fmt.Errorf("scan failed: %w", err)
-		}
+		return nil, fmt.Errorf("no world data — run col scan first")
 	}
 
 	type slot struct {
@@ -369,16 +354,14 @@ func DoRun(conn *communication.BitburnerConn, script string, threads int, args [
 			continue
 		}
 		if resp.Success {
-			if CurrentWorld != nil {
-				CurrentWorld.UpdateRam(d.hostname, ramPerThread*float64(d.threads))
-				CurrentWorld.AddProcess(d.hostname, world.Process{
-					Pid:      uint(resp.PID),
-					Filename: script,
-					Hostname: d.hostname,
-					Threads:  uint(d.threads),
-					Args:     args,
-				})
-			}
+			w.UpdateRam(d.hostname, ramPerThread*float64(d.threads))
+			w.AddProcess(d.hostname, world.Process{
+				Pid:      uint(resp.PID),
+				Filename: script,
+				Hostname: d.hostname,
+				Threads:  uint(d.threads),
+				Args:     args,
+			})
 			result.Dispatches = append(result.Dispatches, RunDispatchResult{d.hostname, d.threads, resp.PID})
 			result.ThreadsScheduled += d.threads
 		} else {

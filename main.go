@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
 	"github.com/KieranGliver/bitburner-larry/internal/app"
 	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
@@ -19,19 +20,21 @@ import (
 
 func main() {
 
-	m := tui.NewModel()
+	appState := &app.AppState{}
+
+	runCmd := func(input string) string {
+		return larcmd.ExecuteCommand(input, appState)
+	}
+
+	m := tui.NewModel(runCmd)
 	defer m.Close()
 
 	p := tea.NewProgram(m)
 
-	app := &app.App{P: p}
+	appState.SetSend(p.Send)
+	app := &app.App{P: p, State: appState}
+
 	app.Start()
-
-	onCall := func(input, result string) {
-		p.Send(logger.InfoDetail(fmt.Sprintf("[mcp] %s", input), result))
-	}
-
-	mcpSrv := mcpserver.New(onCall)
 
 	var scanCancel context.CancelFunc
 
@@ -49,10 +52,10 @@ func main() {
 		if w, err := col.DoScan(conn, ""); err != nil {
 			p.Send(logger.Warn("initial scan: " + err.Error()))
 		} else {
-			p.Send(w)
+			appState.SetWorld(w)
 		}
 		col.RunScanner(conn, scanCtx, 5*time.Second, func(w *world.World) {
-			p.Send(w)
+			appState.SetWorld(w)
 		})
 	}
 
@@ -61,12 +64,22 @@ func main() {
 			scanCancel()
 			scanCancel = nil
 		}
-		mcpSrv.SetConn(conn)
 		app.OnConnect(conn)
+	}, func() {
+		appState.SetConn(nil)
 	}, onColReady)
+
+	onCall := func(input, result string) {
+		p.Send(logger.InfoDetail(fmt.Sprintf("[mcp] %s", input), result))
+	}
+	mcpSrv := mcpserver.New(onCall, appState)
 	go mcpSrv.Serve("12526")
-	go filesync.Watch("scripts/dist", p, app.OnEventDist)
-	go filesync.Watch("scripts/src", p, app.OnEventSrc)
+
+	onError := func(s string) {
+		p.Send(logger.Error(s))
+	}
+	go filesync.Watch("scripts/dist", onError, app.OnEventDist)
+	go filesync.Watch("scripts/src", onError, app.OnEventSrc)
 
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Unable to run tui: %v", err)

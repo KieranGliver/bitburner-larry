@@ -7,7 +7,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 )
 
@@ -140,9 +139,9 @@ func (m *model) handleTerminalKey(key string) tea.Cmd {
 			}
 			m.terminalCmd = cmdVal
 			m.terminalOutput = ""
-			conn := m.conn
+			runCmd := m.runCmd
 			return func() tea.Msg {
-				output := larcmd.ExecuteCommand(cmdVal, conn)
+				output := runCmd(cmdVal)
 				if output == "" {
 					output = "(no output)"
 				}

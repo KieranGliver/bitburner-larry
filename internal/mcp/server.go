@@ -4,41 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
-	col "github.com/KieranGliver/bitburner-larry/internal/col"
-	"github.com/KieranGliver/bitburner-larry/internal/communication"
+	"github.com/KieranGliver/bitburner-larry/internal/app"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 type McpServer struct {
-	conn   *communication.BitburnerConn
-	onCall func(input, result string)
-	mu     sync.RWMutex
+	appState *app.AppState
+	onCall   func(input, result string)
 }
 
-func New(fn func(input, result string)) *McpServer {
-	s := &McpServer{onCall: fn}
+func New(fn func(input, result string), as *app.AppState) *McpServer {
+	s := &McpServer{onCall: fn, appState: as}
 	return s
 }
 
-func (s *McpServer) SetConn(conn *communication.BitburnerConn) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.conn = conn
-}
-
 func (s *McpServer) run(input string) string {
-	s.mu.RLock()
-	conn := s.conn
-	onCall := s.onCall
-	s.mu.RUnlock()
-
-	result := larcmd.ExecuteCommand(input, conn)
-	if onCall != nil {
-		onCall(input, result)
+	result := larcmd.ExecuteCommand(input, s.appState)
+	if s.onCall != nil {
+		s.onCall(input, result)
 	}
 	return result
 }
@@ -79,13 +65,13 @@ func (s *McpServer) Serve(port string) {
 	mcpSrv.AddTool(mcp.NewTool("scan",
 		mcp.WithDescription("Collect full world state from Bitburner via Col and cache it"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		return mcp.NewToolResultText(s.run("col scan")), nil
+		return mcp.NewToolResultText(s.run("col scan foodnstuff")), nil
 	})
 
 	mcpSrv.AddTool(mcp.NewTool("world",
 		mcp.WithDescription("Return the cached world state (player stats + all servers) as JSON; run scan first to populate it"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		world := col.CurrentWorld
+		world := s.appState.World()
 		if world == nil {
 			return mcp.NewToolResultText("no world data — run scan first"), nil
 		}

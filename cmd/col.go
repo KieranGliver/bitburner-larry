@@ -9,9 +9,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// colRPC is a convenience wrapper that uses the package-level currentConn.
+// colRPC is a convenience wrapper that uses the package-level currentState.
 func colRPC(id string, req map[string]any) (string, error) {
-	return col.ColRPCWith(currentConn, id, req)
+	conn := currentState.Conn()
+	return col.ColRPCWith(conn, id, req)
+}
+
+func notConnected(cmd *cobra.Command) bool {
+	conn := currentState.Conn()
+	if conn == nil {
+		fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		return true
+	}
+	return false
 }
 
 var colCmd = &cobra.Command{
@@ -24,10 +34,11 @@ var colExecCmd = &cobra.Command{
 	Short: "Execute a script on a server via Col",
 	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
+		w := currentState.World()
 		threads, _ := cmd.Flags().GetInt("threads")
 		id := col.ColNextID()
 
@@ -53,7 +64,7 @@ var colExecCmd = &cobra.Command{
 			return
 		}
 		if resp.Success {
-			col.TrackProcess(currentConn, args[0], args[1], resp.PID, threads, scriptArgs)
+			col.TrackProcess(w, conn, args[0], args[1], resp.PID, threads, scriptArgs)
 			fmt.Fprintf(cmd.OutOrStdout(), "ok pid=%d\n", resp.PID)
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "failed: %s\n", resp.Error)
@@ -66,10 +77,11 @@ var colDeployCmd = &cobra.Command{
 	Short: "Copy a script to a server and execute it via Col",
 	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
+		w := currentState.World()
 		threads, _ := cmd.Flags().GetInt("threads")
 		id := col.ColNextID()
 
@@ -95,7 +107,7 @@ var colDeployCmd = &cobra.Command{
 			return
 		}
 		if resp.Success {
-			col.TrackProcess(currentConn, args[0], args[1], resp.PID, threads, scriptArgs)
+			col.TrackProcess(w, conn, args[0], args[1], resp.PID, threads, scriptArgs)
 			fmt.Fprintf(cmd.OutOrStdout(), "ok pid=%d\n", resp.PID)
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "failed: %s\n", resp.Error)
@@ -108,8 +120,7 @@ var colKillAllCmd = &cobra.Command{
 	Short: "Kill all scripts on a server (or every server) via Col; col.js on home is always preserved",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
 		id := col.ColNextID()
@@ -152,15 +163,15 @@ var colCrackCmd = &cobra.Command{
 	Short: "Crack servers via Col (omit server to crack all)",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
 		var targets []string
 		if len(args) == 1 {
 			targets = []string{args[0]}
 		}
-		cracked, failed, err := col.DoCrack(currentConn, targets)
+		cracked, failed, err := col.DoCrack(conn, targets)
 		if err != nil {
 			fmt.Fprintln(cmd.OutOrStdout(), err)
 			return
@@ -179,17 +190,18 @@ var colScanCmd = &cobra.Command{
 	Short: "Collect full world state from Bitburner via Col",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
 		server, _ := cmd.Flags().GetString("server")
 		fmt.Fprintf(cmd.OutOrStdout(), "scanning world (via %s)...\n", server)
-		w, err := col.DoScan(currentConn, server)
+		w, err := col.DoScan(conn, server)
 		if err != nil {
 			fmt.Fprintln(cmd.OutOrStdout(), err)
 			return
 		}
+		currentState.SetWorld(w)
 		fmt.Fprintf(cmd.OutOrStdout(), "ok: %d servers scanned\n", len(w.Servers))
 	},
 }
@@ -199,12 +211,13 @@ var colPingCmd = &cobra.Command{
 	Short: "Test the col→HTTP round-trip by exec'ing task-ping.js and waiting for /done",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
+		w := currentState.World()
 		id := col.ColNextID()
-		ch := currentConn.RegisterHTTP(id)
+		ch := conn.RegisterHTTP(id)
 
 		server, _ := cmd.Flags().GetString("server")
 
@@ -227,7 +240,7 @@ var colPingCmd = &cobra.Command{
 			fmt.Fprintf(cmd.OutOrStdout(), "exec failed: %s\n", msg)
 			return
 		}
-		col.TrackProcess(currentConn, server, "task-ping.js", ack.PID, 1, []any{id})
+		col.TrackProcess(w, conn, server, "task-ping.js", ack.PID, 1, []any{id})
 
 		select {
 		case <-ch:
@@ -243,10 +256,11 @@ var colRunCmd = &cobra.Command{
 	Short: "Spread a script across all available servers to hit a target thread count",
 	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
+		w := currentState.World()
 		threads, _ := cmd.Flags().GetInt("threads")
 		asJSON, _ := cmd.Flags().GetBool("json")
 		script := args[0]
@@ -255,7 +269,7 @@ var colRunCmd = &cobra.Command{
 			scriptArgs[i] = a
 		}
 
-		result, err := col.DoRun(currentConn, script, threads, scriptArgs)
+		result, err := col.DoRun(w, conn, script, threads, scriptArgs)
 		if err != nil {
 			fmt.Fprintln(cmd.OutOrStdout(), err)
 			return
@@ -288,15 +302,16 @@ var colCalcCmd = &cobra.Command{
 	Short: "Calculate hack/grow/weaken thread counts and timings for a target via Col",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		if currentConn == nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "not connected to Bitburner")
+		if notConnected(cmd) {
 			return
 		}
+		conn := currentState.Conn()
+		w := currentState.World()
 		target := args[0]
 		hackPercent, _ := cmd.Flags().GetFloat64("hack-percent")
 		asJSON, _ := cmd.Flags().GetBool("json")
 
-		resp, err := col.DoCalc(currentConn, target, hackPercent)
+		resp, err := col.DoCalc(w, conn, target, hackPercent)
 		if err != nil {
 			fmt.Fprintln(cmd.OutOrStdout(), err)
 			return

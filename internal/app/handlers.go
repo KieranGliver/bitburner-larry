@@ -7,19 +7,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync/atomic"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	"github.com/sgtdi/fswatcher"
 )
-
-type App struct {
-	P       *tea.Program
-	Conn    *communication.BitburnerConn
-	syncing atomic.Bool
-}
 
 func (a *App) Start() {
 	entries, err := os.ReadDir("scripts/src")
@@ -44,16 +36,18 @@ func (a *App) Start() {
 func (a *App) OnConnect(b *communication.BitburnerConn) {
 	a.syncing.Store(true)
 	defer a.syncing.Store(false)
-	a.Conn = b
+
+	a.State.SetConn(b)
+	conn := a.State.Conn()
 
 	ctx := context.Background()
 
 	// 0. Clear stale inbox/outbox files from any previous session
-	if files, err := a.Conn.GetFileNames(ctx, "home"); err == nil {
+	if files, err := conn.GetFileNames(ctx, "home"); err == nil {
 		for _, f := range files {
 			norm := strings.TrimPrefix(f, "/")
 			if strings.HasPrefix(norm, "inbox/") || strings.HasPrefix(norm, "outbox/") {
-				if err := a.Conn.DeleteFile(ctx, "home", f); err != nil {
+				if err := conn.DeleteFile(ctx, "home", f); err != nil {
 					a.P.Send(logger.Warn("clear stale " + f + ": " + err.Error()))
 				}
 			}
@@ -61,7 +55,7 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 	}
 
 	// 1. Pull the Netscript type definitions from the game
-	dts, err := a.Conn.GetDefinitionFile(ctx)
+	dts, err := conn.GetDefinitionFile(ctx)
 	if err != nil {
 		a.P.Send(logger.Error("GetDefinitionFile: " + err.Error()))
 		return
@@ -73,7 +67,7 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 	a.P.Send(logger.Info("synced NetscriptDefinitions.d.ts"))
 
 	// 2. Seed local dist with game files that don't exist locally yet
-	gameFiles, err := a.Conn.GetAllFiles(ctx, "home")
+	gameFiles, err := conn.GetAllFiles(ctx, "home")
 	if err != nil {
 		a.P.Send(logger.Error("GetAllFiles: " + err.Error()))
 		return
@@ -113,7 +107,7 @@ func (a *App) OnConnect(b *communication.BitburnerConn) {
 			a.P.Send(logger.Warn("read " + entry.Name() + ": " + err.Error()))
 			continue
 		}
-		if err := a.Conn.PushFile(ctx, "home", entry.Name(), string(content)); err != nil {
+		if err := conn.PushFile(ctx, "home", entry.Name(), string(content)); err != nil {
 			a.P.Send(logger.Warn("push " + entry.Name() + ": " + err.Error()))
 			continue
 		}
@@ -146,7 +140,8 @@ func hasContentChange(event fswatcher.WatchEvent) bool {
 }
 
 func (a *App) OnEventDist(event fswatcher.WatchEvent) {
-	if a.Conn == nil || a.syncing.Load() {
+	conn := a.State.conn
+	if conn == nil || a.syncing.Load() {
 		return
 	}
 
@@ -160,7 +155,7 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 	}
 
 	if slices.Contains(event.Types, fswatcher.EventRemove) || slices.Contains(event.Types, fswatcher.EventRename) {
-		a.Conn.DeleteFile(context.Background(), "home", filename)
+		conn.DeleteFile(context.Background(), "home", filename)
 		a.P.Send(logger.Info("[filesync] deleted " + filename + " from Bitburner"))
 		return
 	}
@@ -180,7 +175,7 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 		return
 	}
 
-	if err := a.Conn.PushFile(context.Background(), "home", filename, string(content)); err != nil {
+	if err := conn.PushFile(context.Background(), "home", filename, string(content)); err != nil {
 		a.P.Send(logger.Error("[filesync] push " + filename + ": " + err.Error()))
 		return
 	}
@@ -189,6 +184,7 @@ func (a *App) OnEventDist(event fswatcher.WatchEvent) {
 }
 
 func (a *App) OnEventSrc(event fswatcher.WatchEvent) {
+
 	ext := filepath.Ext(event.Path)
 	if ext != ".ts" && ext != ".txt" && ext != ".script" {
 		return
