@@ -10,7 +10,6 @@ import (
 	"github.com/KieranGliver/bitburner-larry/internal/app"
 	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
-	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/filesync"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	mcpserver "github.com/KieranGliver/bitburner-larry/internal/mcp"
@@ -19,13 +18,8 @@ import (
 )
 
 func main() {
-	store := &db.Store{}
 
-	if err := store.Init(); err != nil {
-		fmt.Printf("Can't init store: %v", err)
-	}
-
-	m := tui.NewModel(store)
+	m := tui.NewModel()
 	defer m.Close()
 
 	p := tea.NewProgram(m)

@@ -6,7 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	col "github.com/KieranGliver/bitburner-larry/internal/col"
 	"github.com/KieranGliver/bitburner-larry/internal/communication"
-	"github.com/KieranGliver/bitburner-larry/internal/db"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 	"github.com/KieranGliver/bitburner-larry/internal/world"
 )
@@ -28,7 +27,6 @@ type model struct {
 	stateStack []uint
 	width      int
 	height     int
-	store      *db.Store
 	conn       *communication.BitburnerConn
 	world      *world.World
 
@@ -62,14 +60,14 @@ func popState(stack []uint) ([]uint, uint) {
 	return stack[:len(stack)-1], stack[len(stack)-1]
 }
 
-func NewModel(store *db.Store) model {
-	nm, err := NewNotesModel(store)
+func NewModel() model {
+	nm, err := NewNotesModel()
 	if err != nil {
-		fmt.Printf("Unable to load notes: %v", err)
+		fmt.Printf("Unable to load notes log: %v", err)
 	}
 	tm, err := NewTerminalModel()
 	if err != nil {
-		fmt.Printf("Unable to open terminal log: %v", err)
+		fmt.Printf("Unable to load terminal log: %v", err)
 	}
 	lm, err := NewLogsModel()
 	if err != nil {
@@ -78,7 +76,6 @@ func NewModel(store *db.Store) model {
 
 	return model{
 		state:         logsView,
-		store:         store,
 		notesModel:    nm,
 		terminalModel: tm,
 		logsModel:     lm,
@@ -91,6 +88,7 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m *model) Close() {
+	m.notesModel.Close()
 	m.terminalModel.Close()
 	m.logsModel.Close()
 }

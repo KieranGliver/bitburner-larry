@@ -1,21 +1,47 @@
 package tui
 
 import (
+	"math/rand"
 	"strings"
+	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/KieranGliver/bitburner-larry/internal/db"
 )
 
 type notesModel struct {
-	notes         []db.Note
-	currNote      db.Note
+	notes         []noteEntry
+	currNote      noteEntry
 	listIndex     int
 	noteTextarea  textarea.Model
 	noteTextinput textinput.Model
+	noteLog       BinLog
+}
+
+func (nm *notesModel) Open() error {
+	var err error
+	if err = nm.noteLog.Open(); err != nil {
+		return err
+	}
+
+	ent := &noteEntry{}
+	eof := false
+	eof, err = nm.noteLog.Read(ent)
+	for !eof {
+		if err != nil {
+			return err
+		}
+		nm.notes = append(nm.notes, *ent)
+		eof, err = nm.noteLog.Read(ent)
+
+	}
+	return nil
+}
+
+func (nm *notesModel) Close() error {
+	return nm.noteLog.Close()
 }
 
 func (m *model) handleNoteListKey(key string) {
@@ -23,7 +49,7 @@ func (m *model) handleNoteListKey(key string) {
 	case "n":
 		m.noteTextinput.SetValue("")
 		m.noteTextinput.Focus()
-		m.currNote = db.Note{}
+		m.currNote = noteEntry{}
 		m.state = noteTitleView
 	case "up", "k":
 		if m.listIndex > 0 {
@@ -60,21 +86,42 @@ func (m *model) handleNoteTitleKey(key string) {
 	}
 }
 
+func (m *notesModel) nextNoteID() uint64 {
+	return uint64(time.Now().Unix())<<32 | uint64(rand.Uint32())
+}
+
 func (m *model) handleNoteBodyKey(key string) tea.Cmd {
 	switch key {
 	case "ctrl+s":
-		body := m.noteTextarea.Value()
-		m.currNote.Body = body
+		m.currNote.Body = m.noteTextarea.Value()
 
-		var err error
-		if err = m.store.SaveNote(m.currNote); err != nil {
-			return tea.Quit
+		if m.currNote.id != 0 {
+			found := false
+			for i, note := range m.notes {
+				if note.id == m.currNote.id {
+					m.notes[i] = m.currNote
+					found = true
+					break
+				}
+			}
+			if !found {
+				m.notes = append(m.notes, m.currNote)
+			}
+			entries := make([]entry, len(m.notes))
+			for i := range m.notes {
+				entries[i] = &m.notes[i]
+			}
+			if err := m.noteLog.Rewrite(entries); err != nil {
+				return tea.Quit
+			}
+		} else {
+			m.currNote.id = m.nextNoteID()
+			m.notes = append(m.notes, m.currNote)
+			if err := m.noteLog.Write(&m.currNote); err != nil {
+				return tea.Quit
+			}
 		}
-		m.notes, err = m.store.GetNotes()
-		if err != nil {
-			return tea.Quit
-		}
-		m.currNote = db.Note{}
+		m.currNote = noteEntry{}
 		m.state = noteListView
 	case "esc":
 		m.state = noteListView
@@ -133,14 +180,19 @@ func (m model) renderNoteBodyView() string {
 	return "Note: \n\n" + m.noteTextarea.View()
 }
 
-func NewNotesModel(store *db.Store) (notesModel, error) {
-	notes, err := store.GetNotes()
-	if err != nil {
-		return notesModel{}, err
-	}
-	return notesModel{
-		notes:         notes,
+func NewNotesModel() (notesModel, error) {
+
+	nm := notesModel{
 		noteTextarea:  textarea.New(),
 		noteTextinput: textinput.New(),
-	}, nil
+		noteLog: BinLog{
+			FileName: "./bin/.notelog",
+		},
+	}
+
+	if err := nm.Open(); err != nil {
+		return nm, err
+	}
+
+	return nm, nil
 }

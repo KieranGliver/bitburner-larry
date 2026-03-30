@@ -1,10 +1,7 @@
 package tui
 
 import (
-	"encoding/binary"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -13,63 +10,6 @@ import (
 	larcmd "github.com/KieranGliver/bitburner-larry/cmd"
 	"github.com/KieranGliver/bitburner-larry/internal/logger"
 )
-
-type Log struct {
-	FileName string
-	fp       *os.File
-}
-
-func (log *Log) Open() (err error) {
-	log.fp, err = os.OpenFile(log.FileName, os.O_RDWR|os.O_CREATE, 0o644)
-	return err
-}
-
-func (log *Log) Close() error {
-	return log.fp.Close()
-}
-
-func (log *Log) Write(ent *entry) error {
-	_, err := log.fp.Write(ent.encode())
-	return err
-}
-
-func (log *Log) Read(ent *entry) (eof bool, err error) {
-	err = ent.decode(log.fp)
-	if err == io.EOF {
-		return true, nil
-	} else if err != nil {
-		return false, err
-	} else {
-		return false, nil
-	}
-}
-
-type entry struct {
-	cmd string
-}
-
-func (ent *entry) encode() []byte {
-	data := make([]byte, 4+len(ent.cmd))
-	binary.LittleEndian.PutUint32(data[0:4], uint32(len(ent.cmd)))
-	copy(data[4:], ent.cmd)
-	return data
-}
-
-func (ent *entry) decode(r io.Reader) error {
-	var header = make([]byte, 4)
-	if _, err := io.ReadFull(r, header); err != nil {
-		return err
-	}
-	cmdLen := int(binary.LittleEndian.Uint32(header[0:4]))
-
-	data := make([]byte, cmdLen)
-	if _, err := io.ReadFull(r, data); err != nil {
-		return err
-	}
-
-	ent.cmd = string(data)
-	return nil
-}
 
 type terminalResultMsg struct {
 	output string
@@ -83,7 +23,7 @@ type terminalModel struct {
 	terminalCmd    string
 	terminalOutput string
 	terminalLogIdx int
-	terminalCmdLog Log
+	terminalCmdLog BinLog
 }
 
 func (tm *terminalModel) Open() error {
@@ -92,7 +32,7 @@ func (tm *terminalModel) Open() error {
 		return err
 	}
 
-	ent := &entry{}
+	ent := &termEntry{}
 	eof := false
 	eof, err = tm.terminalCmdLog.Read(ent)
 	for !eof {
@@ -188,7 +128,16 @@ func (m *model) handleTerminalKey(key string) tea.Cmd {
 		m.cmdHistoryIdx = -1
 		if cmdVal != "" {
 			m.cmdHistory = append(m.cmdHistory, cmdVal)
-			m.terminalCmdLog.Write(&entry{cmd: cmdVal})
+			if len(m.cmdHistory) > 500 && len(m.cmdHistory)%50 == 0 {
+				m.cmdHistory = m.cmdHistory[len(m.cmdHistory)-500:]
+				entries := make([]entry, len(m.cmdHistory))
+				for i := range m.cmdHistory {
+					entries[i] = &termEntry{cmd: m.cmdHistory[i]}
+				}
+				m.terminalCmdLog.Rewrite(entries)
+			} else {
+				m.terminalCmdLog.Write(&termEntry{cmd: cmdVal})
+			}
 			m.terminalCmd = cmdVal
 			m.terminalOutput = ""
 			conn := m.conn
@@ -218,7 +167,7 @@ func NewTerminalModel() (tm terminalModel, err error) {
 		termTextinput:  textinput.New(),
 		cmdHistoryIdx:  -1,
 		terminalLogIdx: -1,
-		terminalCmdLog: Log{
+		terminalCmdLog: BinLog{
 			FileName: "./bin/.cmdlog",
 		},
 	}
