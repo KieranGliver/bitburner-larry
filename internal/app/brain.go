@@ -16,11 +16,20 @@ type BatchPlan struct {
 	Pids []uint
 }
 
+var crackPrograms = []string{
+	"BruteSSH.exe",
+	"FTPCrack.exe",
+	"relaySMTP.exe",
+	"HTTPWorm.exe",
+	"SQLInject.exe",
+}
+
 type Brain struct {
-	batchMap map[string]BatchPlan
-	rank     func(a, b world.BitServer) bool
-	onLog    func(level logger.Level, summary string)
-	cancel   context.CancelFunc
+	batchMap        map[string]BatchPlan
+	rank            func(a, b world.BitServer) bool
+	onLog           func(level logger.Level, summary string)
+	cancel          context.CancelFunc
+	knownCrackTools int
 }
 
 // brainTargets defines the priority order for the brain to target servers.
@@ -64,6 +73,29 @@ func findByPID(procs []world.Process, id uint) (int, world.Process) {
 func (b *Brain) tick(s *AppState) {
 	var err error
 	conn := s.Conn()
+	ctx := context.Background()
+
+	// Auto-crack when a new cracking program appears on home
+	if files, err := conn.GetFileNames(ctx, "home"); err == nil {
+		count := 0
+		for _, f := range files {
+			for _, p := range crackPrograms {
+				if f == p || f == "/"+p {
+					count++
+					break
+				}
+			}
+		}
+		if count > b.knownCrackTools {
+			b.knownCrackTools = count
+			if cracked, _, err := col.DoCrack(conn, nil); err != nil {
+				b.onLog(logger.ERROR, fmt.Sprintf("auto-crack failed: %v", err))
+			} else if len(cracked) > 0 {
+				b.onLog(logger.INFO, fmt.Sprintf("[brain] auto-cracked %d servers: %v", len(cracked), cracked))
+			}
+		}
+	}
+
 	freshWorld, err := col.DoScan(conn, "")
 	if err != nil {
 		b.onLog(logger.ERROR, fmt.Sprintf("scan failed: %v", err))
@@ -71,7 +103,6 @@ func (b *Brain) tick(s *AppState) {
 	}
 	s.SetWorld(freshWorld)
 	w := freshWorld
-	ctx := context.Background()
 	// Ensure we have enough ram can run the scan script with at least one thread
 
 	ram, err := conn.CalculateRam(ctx, "home", "task-calc.js")
