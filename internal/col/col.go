@@ -260,7 +260,6 @@ func DoCalc(w *world.World, conn *communication.BitburnerConn, target string, ha
 		}
 		return nil, fmt.Errorf("deploy failed: %s", msg)
 	}
-	TrackProcess(w, conn, host, "task-calc.js", ack.PID, 1, []any{id, target, hackPercent})
 
 	select {
 	case data := <-ch:

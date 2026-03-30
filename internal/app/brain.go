@@ -62,18 +62,25 @@ func findByPID(procs []world.Process, id uint) (int, world.Process) {
 }
 
 func (b *Brain) tick(s *AppState) {
-	w := s.World()
+	var err error
 	conn := s.Conn()
+	freshWorld, err := col.DoScan(conn, "")
+	if err != nil {
+		b.onLog(logger.ERROR, fmt.Sprintf("scan failed: %v", err))
+		return
+	}
+	s.SetWorld(freshWorld)
+	w := freshWorld
 	ctx := context.Background()
 	// Ensure we have enough ram can run the scan script with at least one thread
-	var err error
+
 	ram, err := conn.CalculateRam(ctx, "home", "task-calc.js")
 	if err != nil {
 		b.onLog(logger.ERROR, fmt.Sprintf("Error on CalculateRam: %v", err))
 	}
 	_, err = col.PickServer(w, ram)
 	if err != nil {
-		// Can't run task-calc.js so skip no-op
+		// Can't run task-calc.js so no-op
 		return
 	}
 	// Sort servers in the world by rank function
@@ -111,6 +118,12 @@ func (b *Brain) tick(s *AppState) {
 		}
 
 		pids := []uint{}
+		ram, _ := conn.CalculateRam(ctx, "home", "task-calc.js")
+		if _, err := col.PickServer(w, ram); err != nil {
+			// Not enough room for calc so tick is done
+			return
+		}
+
 		calcResp, err := col.DoCalc(w, conn, target.Hostname, 0.25)
 		if err != nil {
 			b.onLog(logger.ERROR, fmt.Sprintf("Error on doCalc: %v", err))
