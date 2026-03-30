@@ -103,9 +103,25 @@ func (b *Brain) tick(s *AppState) {
 	}
 	s.SetWorld(freshWorld)
 	w := freshWorld
+
+	ram, err := conn.CalculateRam(ctx, "home", "task-pserv.js")
+	if err != nil {
+		b.onLog(logger.ERROR, fmt.Sprintf("Error on CalculateRam: %v", err))
+	}
+	_, err = col.PickServer(w, ram)
+	if err != nil {
+		// Can't run task-pserv.js so no-op
+		return
+	}
+	if resp, err := col.DoManageServers(w, conn, 0.10); err != nil {
+		b.onLog(logger.WARN, fmt.Sprintf("[brain] manage-servers: %v", err))
+	} else if len(resp.Bought)+len(resp.Upgraded) > 0 {
+		b.onLog(logger.INFO, fmt.Sprintf("[brain] servers — bought: %v, upgraded: %v", resp.Bought, resp.Upgraded))
+	}
+
 	// Ensure we have enough ram can run the scan script with at least one thread
 
-	ram, err := conn.CalculateRam(ctx, "home", "task-calc.js")
+	ram, err = conn.CalculateRam(ctx, "home", "task-calc.js")
 	if err != nil {
 		b.onLog(logger.ERROR, fmt.Sprintf("Error on CalculateRam: %v", err))
 	}

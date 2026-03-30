@@ -372,6 +372,63 @@ func DoRun(w *world.World, conn *communication.BitburnerConn, script string, thr
 	return result, nil
 }
 
+type ColManageServersResponse struct {
+	ID       string   `json:"id"`
+	Success  bool     `json:"success"`
+	Bought   []string `json:"bought"`
+	Upgraded []string `json:"upgraded"`
+	Error    string   `json:"error"`
+}
+
+// DoManageServers deploys task-pserv.js to a free server and waits for it to
+// report what was purchased/upgraded. budgetFraction is the fraction of current
+// money to spend (e.g. 0.10).
+func DoManageServers(w *world.World, conn *communication.BitburnerConn, budgetFraction float64) (*ColManageServersResponse, error) {
+	ctx := context.Background()
+	ramPerThread, err := conn.CalculateRam(ctx, "home", "task-pserv.js")
+	if err != nil {
+		return nil, fmt.Errorf("error getting RAM cost: %w", err)
+	}
+	host, err := PickServer(w, ramPerThread)
+	if err != nil {
+		return nil, err
+	}
+
+	id := ColNextID()
+	ch := conn.RegisterHTTP(id)
+
+	ackRaw, err := ColRPCWith(conn, id, map[string]any{
+		"id": id, "action": "deploy",
+		"server": host, "script": "task-pserv.js",
+		"threads": 1, "args": []any{id, budgetFraction},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var ack ColResponse
+	if err := json.Unmarshal([]byte(ackRaw), &ack); err != nil || !ack.Success {
+		msg := ack.Error
+		if err != nil {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("deploy failed: %s", msg)
+	}
+
+	select {
+	case data := <-ch:
+		var resp ColManageServersResponse
+		if err := json.Unmarshal([]byte(data), &resp); err != nil {
+			return nil, fmt.Errorf("parse task-pserv response: %w", err)
+		}
+		if !resp.Success {
+			return nil, fmt.Errorf("task-pserv failed: %s", resp.Error)
+		}
+		return &resp, nil
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("timeout waiting for task-pserv.js")
+	}
+}
+
 // RunScanner runs a background loop that scans the world every interval and calls
 // onWorld with each result. It stops when ctx is cancelled.
 func RunScanner(conn *communication.BitburnerConn, ctx context.Context, interval time.Duration, onWorld func(*world.World)) {
